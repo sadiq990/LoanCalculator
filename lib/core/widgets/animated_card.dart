@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:ui';
 import '../theme/app_theme.dart';
 
 /// An animated card widget with fade-in and slide-up animation
@@ -44,16 +45,16 @@ class _AnimatedCardState extends State<AnimatedCard>
     );
 
     _slideAnimation =
-        Tween<Offset>(begin: const Offset(0, 0.1), end: Offset.zero).animate(
+        Tween<Offset>(begin: const Offset(0, 0.05), end: Offset.zero).animate(
           CurvedAnimation(parent: _controller, curve: AppTheme.curveDefault),
         );
 
-    _scaleAnimation = Tween<double>(begin: 0.95, end: 1.0).animate(
+    _scaleAnimation = Tween<double>(begin: 0.98, end: 1.0).animate(
       CurvedAnimation(parent: _controller, curve: AppTheme.curveDefault),
     );
 
-    // Stagger the animation based on index
-    Future.delayed(Duration(milliseconds: widget.index * 50), () {
+    // Stagger the animation based on index - faster iOS timing
+    Future.delayed(Duration(milliseconds: widget.index * 40), () {
       if (mounted) {
         _controller.forward();
       }
@@ -86,6 +87,43 @@ class _AnimatedCardState extends State<AnimatedCard>
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final radius = BorderRadius.circular(AppTheme.radiusLg);
+    final lightBorder = const Color(0xFFE1EAF7);
+    final lightShadow = const Color(0xFF1D4ED8).withValues(alpha: 0.08);
+
+    final BoxDecoration decoration = BoxDecoration(
+      color: isDark
+          ? AppTheme.surfaceLight.withValues(alpha: 0.7)
+          : Colors.white,
+      borderRadius: radius,
+      border: Border.all(
+        color: isDark ? Colors.white.withValues(alpha: 0.08) : lightBorder,
+        width: 0.5,
+      ),
+      boxShadow: widget.withShadow
+          ? [
+              BoxShadow(
+                color: isDark
+                    ? Colors.black.withValues(alpha: 0.15)
+                    : lightShadow,
+                blurRadius: isDark ? 10 : 16,
+                offset: const Offset(0, 6),
+              ),
+            ]
+          : null,
+      gradient: isDark
+          ? LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.white.withValues(alpha: 0.08),
+                Colors.white.withValues(alpha: 0.03),
+              ],
+            )
+          : null,
+    );
+
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, child) {
@@ -103,21 +141,29 @@ class _AnimatedCardState extends State<AnimatedCard>
         onTapCancel: _handleTapCancel,
         onTap: widget.onTap,
         child: AnimatedScale(
-          scale: _isPressed ? 0.97 : 1.0,
+          scale: _isPressed ? 0.98 : 1.0, // Subtle iOS press
           duration: AppTheme.animFast,
           curve: AppTheme.curveDefault,
-          child: Container(
-            padding: widget.padding ?? const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: AppTheme.cardBg,
-              borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-              boxShadow: widget.withShadow ? AppTheme.shadowMd : null,
-              border: Border.all(
-                color: AppTheme.divider.withValues(alpha: 0.5),
-                width: 1,
-              ),
+          child: ClipRRect(
+            borderRadius: radius,
+            child: Builder(
+              builder: (context) {
+                Widget content = Container(
+                  padding: widget.padding ?? const EdgeInsets.all(16),
+                  decoration: decoration,
+                  child: widget.child,
+                );
+
+                if (isDark) {
+                  content = BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                    child: content,
+                  );
+                }
+
+                return content;
+              },
             ),
-            child: widget.child,
           ),
         ),
       ),

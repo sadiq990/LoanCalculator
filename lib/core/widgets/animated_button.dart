@@ -48,9 +48,11 @@ class _AnimatedButtonState extends State<AnimatedButton>
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final isEnabled = widget.onPressed != null && !widget.isLoading;
     final bgColor = widget.backgroundColor ?? AppTheme.primary;
     final fgColor = widget.foregroundColor ?? Colors.white;
+    final baseShadow = bgColor.withValues(alpha: isDark ? 0.3 : 0.18);
 
     return GestureDetector(
       onTapDown: _handleTapDown,
@@ -64,15 +66,23 @@ class _AnimatedButtonState extends State<AnimatedButton>
         child: AnimatedOpacity(
           opacity: isEnabled ? 1.0 : 0.6,
           duration: AppTheme.animFast,
-          child: Container(
+          child: AnimatedContainer(
+            duration: AppTheme.animFast,
+            curve: AppTheme.curveDefault,
             height: 56,
+            transform: Matrix4.translationValues(0, _isPressed ? 2 : 0, 0),
             decoration: BoxDecoration(
               gradient: widget.isOutlined
                   ? null
                   : LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
-                      colors: [bgColor, bgColor.withValues(alpha: 0.85)],
+                      colors: _isPressed
+                          ? [
+                              bgColor.withValues(alpha: 0.92),
+                              bgColor.withValues(alpha: 0.8),
+                            ]
+                          : [bgColor, bgColor.withValues(alpha: 0.85)],
                     ),
               color: widget.isOutlined ? Colors.transparent : null,
               borderRadius: BorderRadius.circular(AppTheme.radiusMd),
@@ -83,9 +93,12 @@ class _AnimatedButtonState extends State<AnimatedButton>
                   ? null
                   : [
                       BoxShadow(
-                        color: bgColor.withValues(alpha: 0.3),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
+                        color: baseShadow,
+                        blurRadius: _isPressed
+                            ? (isDark ? 7 : 5)
+                            : (isDark ? 14 : 10),
+                        spreadRadius: _isPressed ? 0 : 1,
+                        offset: Offset(0, _isPressed ? 2 : 6),
                       ),
                     ],
             ),

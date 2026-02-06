@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/foundation.dart'; // For kIsWeb
 import '../core/theme/app_theme.dart';
+import '../core/widgets/app_scaffold.dart';
 import '../providers/settings_provider.dart';
 import '../core/widgets/animated_card.dart';
 import '../services/auth_service.dart';
@@ -13,8 +14,8 @@ class SettingsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final settings = Provider.of<SettingsProvider>(context);
 
-    return Scaffold(
-      backgroundColor: AppTheme.background,
+    return AppScaffold(
+      useSafeArea: false,
       appBar: AppBar(
         title: Text('Settings'),
         backgroundColor: Colors.transparent,
@@ -107,10 +108,7 @@ class SettingsScreen extends StatelessWidget {
             color: AppTheme.primary.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(8),
           ),
-          child: Icon(
-            Icons.currency_exchange_rounded,
-            color: AppTheme.primary,
-          ),
+          child: Icon(Icons.currency_exchange_rounded, color: AppTheme.primary),
         ),
         title: Text('Currency Symbol'),
         trailing: DropdownButton<String>(
@@ -122,10 +120,7 @@ class SettingsScreen extends StatelessWidget {
                   value: c,
                   child: Text(
                     c,
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                 ),
               )
@@ -256,5 +251,3 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 }
-
-

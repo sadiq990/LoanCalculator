@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../core/theme/app_theme.dart';
+import '../core/widgets/app_scaffold.dart';
 import '../models/loan.dart';
 import '../models/amortization_entry.dart';
 import '../providers/settings_provider.dart';
+import '../core/utils/currency_formatter.dart';
 
 class AmortizationScreen extends StatefulWidget {
   final Loan loan;
@@ -52,10 +54,11 @@ class _AmortizationScreenState extends State<AmortizationScreen> {
     double savedInterest = originalInterest - totalInterest;
     int savedMonths = originalMonths - totalMonths;
 
-    return Scaffold(
+    return AppScaffold(
+      useSafeArea: false,
       appBar: AppBar(
         title: Text('Amortization Schedule'),
-        backgroundColor: AppTheme.background,
+        backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: IconThemeData(color: AppTheme.textPrimary),
       ),
@@ -96,10 +99,7 @@ class _AmortizationScreenState extends State<AmortizationScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Extra Monthly:',
-                style: TextStyle(color: Colors.white70),
-              ),
+              Text('Extra Monthly:', style: TextStyle(color: Colors.white70)),
               Text(
                 formatCurrency(_extraPayment, symbol: settings.currencySymbol),
                 style: TextStyle(
@@ -239,9 +239,7 @@ class _AmortizationScreenState extends State<AmortizationScreen> {
         color: indexIsEven(entry.monthIndex)
             ? Colors.transparent
             : AppTheme.surfaceLight.withValues(alpha: 0.3),
-        border: Border(
-          bottom: BorderSide(color: AppTheme.divider, width: 0.5),
-        ),
+        border: Border(bottom: BorderSide(color: AppTheme.divider, width: 0.5)),
       ),
       child: Row(
         children: [
@@ -256,10 +254,7 @@ class _AmortizationScreenState extends State<AmortizationScreen> {
                 ),
                 Text(
                   dateFormat.format(entry.date),
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: AppTheme.textLight,
-                  ),
+                  style: TextStyle(fontSize: 10, color: AppTheme.textLight),
                 ),
               ],
             ),
@@ -299,12 +294,11 @@ class _AmortizationScreenState extends State<AmortizationScreen> {
 
   bool indexIsEven(int index) => index % 2 == 0;
 
-  static final _headerStyle = TextStyle(
+  TextStyle get _headerStyle => TextStyle(
     fontSize: 12,
     fontWeight: FontWeight.bold,
     color: AppTheme.textSecondary,
   );
-  static final _valStyle = TextStyle(fontSize: 13, color: AppTheme.textPrimary);
+  TextStyle get _valStyle =>
+      TextStyle(fontSize: 13, color: AppTheme.textPrimary);
 }
-
-

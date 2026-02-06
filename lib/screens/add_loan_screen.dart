@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:math';
 import '../core/theme/app_theme.dart';
+import '../core/widgets/app_scaffold.dart';
 import '../core/widgets/animated_button.dart';
 import '../models/loan.dart';
 import '../services/storage_service.dart';
 import '../core/utils/input_formatters.dart';
 import '../core/constants/loan_icons.dart';
+import '../core/utils/currency_formatter.dart';
 
 /// Screen to add a new loan
 class AddLoanScreen extends StatefulWidget {
@@ -111,7 +113,12 @@ class _AddLoanScreenState extends State<AddLoanScreen>
       months *= 12;
     }
 
-    if (amount == null || amount <= 0 || rate == null || rate < 0 || months == null || months <= 0) {
+    if (amount == null ||
+        amount <= 0 ||
+        rate == null ||
+        rate < 0 ||
+        months == null ||
+        months <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please enter valid loan details'),
@@ -159,8 +166,8 @@ class _AddLoanScreenState extends State<AddLoanScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.background,
+    return AppScaffold(
+      useSafeArea: false,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         leading: AnimatedIconButton(
@@ -543,5 +550,3 @@ class _AddLoanScreenState extends State<AddLoanScreen>
     );
   }
 }
-
-

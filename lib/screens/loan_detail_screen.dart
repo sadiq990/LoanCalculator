@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../core/theme/app_theme.dart';
+import '../core/widgets/app_scaffold.dart';
 import '../core/widgets/animated_button.dart';
 import '../core/widgets/animated_card.dart';
 import '../models/loan.dart';
@@ -9,6 +10,7 @@ import '../services/storage_service.dart';
 import '../core/constants/loan_icons.dart';
 import '../services/pdf_service.dart';
 import 'amortization_screen.dart'; // Add import
+import '../core/utils/currency_formatter.dart';
 import 'package:provider/provider.dart';
 import '../providers/settings_provider.dart';
 
@@ -32,6 +34,8 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
   bool _isSaving = false;
   bool _showPaymentSuccess = false;
   double _lastPaymentAmount = 0;
+  double _previousRemainingDebt = 0;
+  double _previousProgress = 0;
 
   late AnimationController _headerController;
   late Animation<double> _headerFade;
@@ -62,10 +66,13 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
 
   Future<void> _loadLoan() async {
     if (!mounted) return;
+    final previousLoan = _loan;
     setState(() => _isLoading = true);
     final loan = await _storage.getLoan(widget.loanId);
     if (!mounted) return;
     setState(() {
+      _previousRemainingDebt = previousLoan?.totalRemaining ?? 0;
+      _previousProgress = (previousLoan?.progress ?? 0).clamp(0.0, 1.0);
       _loan = loan;
       _isLoading = false;
     });
@@ -86,11 +93,16 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
 
     setState(() => _isSaving = true);
 
+    final previousLoan = _loan;
     final payment = Payment.create(amount: amount);
     final updatedLoan = await _storage.addPayment(widget.loanId, payment);
 
     if (updatedLoan != null) {
       setState(() {
+        _previousRemainingDebt =
+            previousLoan?.remainingDebt ?? updatedLoan.remainingDebt;
+        _previousProgress = (previousLoan?.progress ?? updatedLoan.progress)
+            .clamp(0.0, 1.0);
         _loan = updatedLoan;
         _isSaving = false;
         _showPaymentSuccess = true;
@@ -145,8 +157,7 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.background,
+    return AppScaffold(
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _loan == null
@@ -182,33 +193,41 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
 
   Widget _buildContent() {
     final loan = _loan!;
-    return SafeArea(
-      child: Column(
-        children: [
-          _buildHeader(loan),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.all(20),
-              children: [
-                if (_showPaymentSuccess) _buildSuccessMessage(),
-                _buildPaymentInput(loan),
-                const SizedBox(height: 20),
-                _buildLoanInfo(loan),
-                const SizedBox(height: 20),
-                _buildQuickStats(loan),
-                const SizedBox(height: 20),
-                _buildPaymentHistory(loan),
-                const SizedBox(height: 20),
-                _buildDeleteButton(),
-              ],
-            ),
+    return Column(
+      children: [
+        _buildHeader(loan),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              if (_showPaymentSuccess) _buildSuccessMessage(),
+              _buildPaymentInput(loan),
+              const SizedBox(height: 20),
+              _buildLoanInfo(loan),
+              const SizedBox(height: 20),
+              _buildQuickStats(loan),
+              const SizedBox(height: 20),
+              _buildPaymentHistory(loan),
+              const SizedBox(height: 20),
+              _buildDeleteButton(),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   Widget _buildHeader(Loan loan) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final actionBg = isDark
+        ? Colors.white.withValues(alpha: 0.16)
+        : Colors.black.withValues(alpha: 0.12);
+    final actionBorder = Colors.white.withValues(alpha: isDark ? 0.28 : 0.22);
+    final progressEnd = loan.progress.clamp(0.0, 1.0);
+    final progressStart = _previousProgress.clamp(0.0, 1.0);
+    final remainingStart = _previousRemainingDebt;
+    final remainingEnd = loan.totalRemaining;
+
     return AnimatedBuilder(
       animation: _headerController,
       builder: (context, child) {
@@ -218,14 +237,28 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
         );
       },
       child: Container(
-        margin: const EdgeInsets.all(20),
-        padding: const EdgeInsets.all(24),
+        margin: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           gradient: loan.isPaidOff
               ? AppTheme.successGradient
-              : AppTheme.primaryGradient,
-          borderRadius: BorderRadius.circular(AppTheme.radiusXl),
-          boxShadow: AppTheme.shadowPrimary,
+              : LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFF3b82f6), // Tailwind blue-500
+                    Color(0xFF6366f1), // Tailwind indigo-500
+                  ],
+                ),
+          borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+          boxShadow: [
+            BoxShadow(
+              color: AppTheme.primary.withValues(alpha: 0.3),
+              blurRadius: 20,
+              spreadRadius: 2,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -237,7 +270,8 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
                   child: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.2),
+                      color: actionBg,
+                      border: Border.all(color: actionBorder),
                       borderRadius: BorderRadius.circular(AppTheme.radiusMd),
                     ),
                     child: Icon(
@@ -248,49 +282,94 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
                   ),
                 ),
                 const SizedBox(width: 12),
-                // Custom Icon Small
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.15),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    kLoanIcons[loan.iconId] ?? Icons.credit_card_rounded,
-                    color: Colors.white,
-                    size: 18,
+                Hero(
+                  tag: 'loan-icon-${loan.id}',
+                  child: Material(
+                    color: Colors.transparent,
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: actionBg,
+                        border: Border.all(color: actionBorder),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        kLoanIcons[loan.iconId] ?? Icons.credit_card_rounded,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text(
-                    loan.name,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                if (loan.isPaidOff)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(AppTheme.radiusFull),
-                    ),
-                    child: Text(
-                      '✓ Paid Off',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
+                  child: Hero(
+                    tag: 'loan-title-${loan.id}',
+                    child: Material(
+                      color: Colors.transparent,
+                      child: Text(
+                        loan.name,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                   ),
+                ),
+                // Buttons moved to top right
+                Container(
+                  decoration: BoxDecoration(
+                    color: actionBg,
+                    border: Border.all(color: actionBorder),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: Icon(
+                          Icons.table_chart_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                        tooltip: 'Amortization',
+                        padding: EdgeInsets.all(8),
+                        constraints: BoxConstraints(),
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => AmortizationScreen(loan: loan),
+                            ),
+                          );
+                        },
+                      ),
+                      Container(width: 1, height: 20, color: Colors.white24),
+                      IconButton(
+                        icon: Icon(
+                          Icons.picture_as_pdf_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                        tooltip: 'Export PDF',
+                        padding: EdgeInsets.all(8),
+                        constraints: BoxConstraints(),
+                        onPressed: () {
+                          final settings = Provider.of<SettingsProvider>(
+                            context,
+                            listen: false,
+                          );
+                          PdfService.generateLoanReport(
+                            loan,
+                            settings.currencySymbol,
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 24),
@@ -305,7 +384,7 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
             ),
             const SizedBox(height: 8),
             TweenAnimationBuilder<double>(
-              tween: Tween<double>(begin: 0, end: loan.remainingDebt),
+              tween: Tween<double>(begin: remainingStart, end: remainingEnd),
               duration: AppTheme.animSlow,
               curve: AppTheme.curveDefault,
               builder: (context, value, child) {
@@ -321,22 +400,31 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
               },
             ),
             const SizedBox(height: 20),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(AppTheme.radiusFull),
-              child: TweenAnimationBuilder<double>(
-                tween: Tween<double>(begin: 0, end: loan.progress),
-                duration: AppTheme.animSlow,
-                curve: AppTheme.curveDefault,
-                builder: (context, value, child) {
-                  return LinearProgressIndicator(
-                    value: value,
-                    minHeight: 10,
-                    backgroundColor: Colors.white.withValues(alpha: 0.2),
-                    valueColor: const AlwaysStoppedAnimation<Color>(
-                      Colors.white,
+            Hero(
+              tag: 'loan-progress-${loan.id}',
+              child: Material(
+                color: Colors.transparent,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(AppTheme.radiusFull),
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween<double>(
+                      begin: progressStart,
+                      end: progressEnd,
                     ),
-                  );
-                },
+                    duration: AppTheme.animSlow,
+                    curve: AppTheme.curveDefault,
+                    builder: (context, value, child) {
+                      return LinearProgressIndicator(
+                        value: value,
+                        minHeight: 10,
+                        backgroundColor: Colors.white.withValues(alpha: 0.2),
+                        valueColor: const AlwaysStoppedAnimation<Color>(
+                          Colors.white,
+                        ),
+                      );
+                    },
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: 8),
@@ -344,7 +432,7 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  '${(loan.progress * 100).toStringAsFixed(0)}% complete',
+                  '${(progressEnd * 100).toStringAsFixed(0)}% complete',
                   style: TextStyle(
                     color: Colors.white70,
                     fontSize: 13,
@@ -353,64 +441,13 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
                 ),
                 Expanded(
                   child: Text(
-                    'Day ${loan.paymentDay} • ${loan.daysUntilPayment} days left',
+                    'Day ${loan.paymentDay} - ${loan.daysUntilPayment} days left',
                     style: TextStyle(
                       color: Colors.white70,
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
                     ),
                     textAlign: TextAlign.end,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: Icon(
-                          Icons.table_chart_rounded,
-                          color: Colors.white,
-                        ),
-                        tooltip: 'Amortization',
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => AmortizationScreen(loan: loan),
-                            ),
-                          );
-                        },
-                      ),
-                      Container(width: 1, height: 24, color: Colors.white24),
-                      IconButton(
-                        icon: Icon(
-                          Icons.picture_as_pdf_rounded,
-                          color: Colors.white,
-                        ),
-                        tooltip: 'Export PDF',
-                        onPressed: () {
-                          final settings = Provider.of<SettingsProvider>(
-                            context,
-                            listen: false,
-                          );
-                          PdfService.generateLoanReport(
-                            loan,
-                            settings.currencySymbol,
-                          );
-                        },
-                      ),
-                    ],
                   ),
                 ),
               ],
@@ -435,10 +472,7 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
               color: AppTheme.successLight,
               borderRadius: BorderRadius.circular(AppTheme.radiusMd),
             ),
-            child: Icon(
-              Icons.check_circle_rounded,
-              color: AppTheme.success,
-            ),
+            child: Icon(Icons.check_circle_rounded, color: AppTheme.success),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -614,10 +648,7 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: TextStyle(fontSize: 12, color: AppTheme.textLight),
-        ),
+        Text(label, style: TextStyle(fontSize: 12, color: AppTheme.textLight)),
         const SizedBox(height: 4),
         Text(
           value,
@@ -846,5 +877,3 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
     );
   }
 }
-
-
