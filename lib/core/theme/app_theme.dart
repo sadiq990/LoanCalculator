@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 /// App-wide design system with colors, typography, and animations
 class AppTheme {
@@ -31,17 +32,15 @@ class AppTheme {
   static const Color _darkDivider = Color(0xFF334155); // Slate 700
   static const Color _darkSuccessLight = Color(0xFF064E3B); // Green 900
 
-  // Premium Light Mode Palette (Clean Blue-Tinted White)
-  static const Color _lightBackground = Color(0xFFDDEBFF); // Soft blue
+  // Premium Light Mode Palette (Clean, Apple-like)
+  static const Color _lightBackground = Color(0xFFF8FAFC); // Slate 50
   static const Color _lightSurface = Color(0xFFFFFFFF);
-  static const Color _lightSurfaceLight = Color(
-    0xFFF5F9FF,
-  ); // Blue-tinted white
+  static const Color _lightSurfaceLight = Color(0xFFF1F5F9); // Slate 100
   static const Color _lightCardBg = Color(0xFFFFFFFF);
   static const Color _lightTextPrimary = Color(0xFF0F172A); // Slate 900
   static const Color _lightTextSecondary = Color(0xFF475569); // Slate 600
   static const Color _lightTextLight = Color(0xFF64748B); // Slate 500
-  static const Color _lightDivider = Color(0xFFDDE6F4); // Soft blue divider
+  static const Color _lightDivider = Color(0xFFE2E8F0); // Slate 200
   static const Color _lightSuccessLight = Color(0xFFDCFCE7); // Green 100
 
   static Color get background => _isDark ? _darkBackground : _lightBackground;
@@ -59,7 +58,7 @@ class AppTheme {
   static const success = Color(0xFF22C55E); // Green 500
   static Color get successLight =>
       _isDark ? _darkSuccessLight : _lightSuccessLight;
-  static const warning = Color(0xFFEAB308); // Yellow 500
+  static const warning = Color(0xFFF59E0B); // Amber 500 (better contrast)
   static const error = Color(0xFFEF4444); // Red 500
 
   // Text Colors
@@ -78,15 +77,6 @@ class AppTheme {
     colors: [Color(0xFF2563EB), Color(0xFF4F46E5)], // Blue 600 to Indigo 600
   );
 
-  static LinearGradient glassGradient = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [
-      Colors.white.withValues(alpha: 0.1),
-      Colors.white.withValues(alpha: 0.05),
-    ],
-  );
-
   // Animation Durations (Standard, smooth)
   static const animFast = Duration(milliseconds: 200);
   static const animMedium = Duration(milliseconds: 300);
@@ -102,7 +92,7 @@ class AppTheme {
   static const radiusMd = 12.0;
   static const radiusLg = 16.0;
   static const radiusXl = 24.0;
-  static const radiusSheet = 32.0; // For top rounded sheet
+  static const radiusSheet = 32.0;
   static const radiusFull = 100.0;
 
   // Shadows (Soft, no neon glow)
@@ -133,8 +123,60 @@ class AppTheme {
   static LinearGradient successGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [success, Color(0xFF28CD4F)], // Green gradient
+    colors: [success, Color(0xFF28CD4F)],
   );
+
+  /// Google Fonts text theme
+  static TextTheme _buildTextTheme(bool isDark) {
+    final base = GoogleFonts.interTextTheme();
+    final textColor = isDark ? _darkTextPrimary : _lightTextPrimary;
+    final secondaryColor = isDark ? _darkTextSecondary : _lightTextSecondary;
+
+    return base.copyWith(
+      displayLarge: base.displayLarge?.copyWith(
+        fontSize: 34,
+        fontWeight: FontWeight.w800,
+        color: textColor,
+        letterSpacing: -0.5,
+      ),
+      displayMedium: base.displayMedium?.copyWith(
+        fontSize: 28,
+        fontWeight: FontWeight.w700,
+        color: textColor,
+        letterSpacing: -0.3,
+      ),
+      headlineLarge: base.headlineLarge?.copyWith(
+        fontSize: 24,
+        fontWeight: FontWeight.w600,
+        color: textColor,
+        letterSpacing: -0.2,
+      ),
+      headlineMedium: base.headlineMedium?.copyWith(
+        fontSize: 20,
+        fontWeight: FontWeight.w600,
+        color: textColor,
+        letterSpacing: -0.1,
+      ),
+      titleLarge: base.titleLarge?.copyWith(
+        fontSize: 17,
+        fontWeight: FontWeight.w600,
+        color: textColor,
+        letterSpacing: -0.4,
+      ),
+      bodyLarge: base.bodyLarge?.copyWith(
+        fontSize: 17,
+        fontWeight: FontWeight.w400,
+        color: textColor,
+        letterSpacing: -0.4,
+      ),
+      bodyMedium: base.bodyMedium?.copyWith(
+        fontSize: 15,
+        fontWeight: FontWeight.w400,
+        color: secondaryColor,
+        letterSpacing: -0.2,
+      ),
+    );
+  }
 
   static FilledButtonThemeData _buildFilledButtonTheme(bool isDark) {
     return FilledButtonThemeData(
@@ -167,8 +209,8 @@ class AppTheme {
         shape: WidgetStatePropertyAll(
           RoundedRectangleBorder(borderRadius: BorderRadius.circular(radiusMd)),
         ),
-        textStyle: const WidgetStatePropertyAll(
-          TextStyle(
+        textStyle: WidgetStatePropertyAll(
+          GoogleFonts.inter(
             fontSize: 16,
             fontWeight: FontWeight.w700,
             letterSpacing: -0.2,
@@ -226,8 +268,8 @@ class AppTheme {
           }
           return null;
         }),
-        textStyle: const WidgetStatePropertyAll(
-          TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+        textStyle: WidgetStatePropertyAll(
+          GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600),
         ),
       ),
     );
@@ -284,62 +326,19 @@ class AppTheme {
       scaffoldBackgroundColor: _darkBackground,
       cardColor: _darkCardBg,
       dividerColor: _darkDivider,
-      fontFamily: 'SF Pro Display', // iOS system font
-      appBarTheme: const AppBarTheme(
+      fontFamily: GoogleFonts.inter().fontFamily,
+      textTheme: _buildTextTheme(true),
+      appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
         foregroundColor: _darkTextPrimary,
         elevation: 0,
-        centerTitle: false, // iOS style - left aligned
+        centerTitle: false,
         scrolledUnderElevation: 0,
-        titleTextStyle: TextStyle(
+        titleTextStyle: GoogleFonts.inter(
           color: _darkTextPrimary,
-          fontSize: 34, // iOS large title
-          fontWeight: FontWeight.w700,
-          letterSpacing: -0.5,
-        ),
-      ),
-      textTheme: const TextTheme(
-        displayLarge: TextStyle(
-          fontSize: 34,
-          fontWeight: FontWeight.w700,
-          color: _darkTextPrimary,
-          letterSpacing: -0.5,
-        ),
-        displayMedium: TextStyle(
-          fontSize: 28,
-          fontWeight: FontWeight.w700,
-          color: _darkTextPrimary,
-          letterSpacing: -0.3,
-        ),
-        headlineLarge: TextStyle(
-          fontSize: 24,
-          fontWeight: FontWeight.w600,
-          color: _darkTextPrimary,
-          letterSpacing: -0.2,
-        ),
-        headlineMedium: TextStyle(
           fontSize: 20,
-          fontWeight: FontWeight.w600,
-          color: _darkTextPrimary,
-          letterSpacing: -0.1,
-        ),
-        titleLarge: TextStyle(
-          fontSize: 17,
-          fontWeight: FontWeight.w600,
-          color: _darkTextPrimary,
-          letterSpacing: -0.4,
-        ),
-        bodyLarge: TextStyle(
-          fontSize: 17,
-          fontWeight: FontWeight.w400,
-          color: _darkTextPrimary,
-          letterSpacing: -0.4,
-        ),
-        bodyMedium: TextStyle(
-          fontSize: 15,
-          fontWeight: FontWeight.w400,
-          color: _darkTextSecondary,
-          letterSpacing: -0.2,
+          fontWeight: FontWeight.w700,
+          letterSpacing: -0.3,
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
@@ -387,6 +386,13 @@ class AppTheme {
           ),
         ),
       ),
+      navigationBarTheme: NavigationBarThemeData(
+        backgroundColor: Colors.transparent,
+        indicatorColor: primary.withValues(alpha: 0.15),
+        labelTextStyle: WidgetStatePropertyAll(
+          GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600),
+        ),
+      ),
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
           TargetPlatform.android: CupertinoPageTransitionsBuilder(),
@@ -419,62 +425,19 @@ class AppTheme {
       scaffoldBackgroundColor: _lightBackground,
       cardColor: _lightCardBg,
       dividerColor: _lightDivider,
-      fontFamily: 'SF Pro Display',
+      fontFamily: GoogleFonts.inter().fontFamily,
+      textTheme: _buildTextTheme(false),
       appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
         foregroundColor: _lightTextPrimary,
         elevation: 0,
         centerTitle: false,
         scrolledUnderElevation: 0,
-        titleTextStyle: TextStyle(
+        titleTextStyle: GoogleFonts.inter(
           color: _lightTextPrimary,
-          fontSize: 34,
-          fontWeight: FontWeight.w700,
-          letterSpacing: -0.5,
-        ),
-      ),
-      textTheme: TextTheme(
-        displayLarge: TextStyle(
-          fontSize: 34,
-          fontWeight: FontWeight.w700,
-          color: _lightTextPrimary,
-          letterSpacing: -0.5,
-        ),
-        displayMedium: TextStyle(
-          fontSize: 28,
-          fontWeight: FontWeight.w700,
-          color: _lightTextPrimary,
-          letterSpacing: -0.3,
-        ),
-        headlineLarge: TextStyle(
-          fontSize: 24,
-          fontWeight: FontWeight.w600,
-          color: _lightTextPrimary,
-          letterSpacing: -0.2,
-        ),
-        headlineMedium: TextStyle(
           fontSize: 20,
-          fontWeight: FontWeight.w600,
-          color: _lightTextPrimary,
-          letterSpacing: -0.1,
-        ),
-        titleLarge: TextStyle(
-          fontSize: 17,
-          fontWeight: FontWeight.w600,
-          color: _lightTextPrimary,
-          letterSpacing: -0.4,
-        ),
-        bodyLarge: TextStyle(
-          fontSize: 17,
-          fontWeight: FontWeight.w400,
-          color: _lightTextPrimary,
-          letterSpacing: -0.4,
-        ),
-        bodyMedium: TextStyle(
-          fontSize: 15,
-          fontWeight: FontWeight.w400,
-          color: _lightTextSecondary,
-          letterSpacing: -0.2,
+          fontWeight: FontWeight.w700,
+          letterSpacing: -0.3,
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
@@ -520,6 +483,13 @@ class AppTheme {
           borderRadius: BorderRadius.vertical(
             top: Radius.circular(radiusSheet),
           ),
+        ),
+      ),
+      navigationBarTheme: NavigationBarThemeData(
+        backgroundColor: Colors.transparent,
+        indicatorColor: primary.withValues(alpha: 0.1),
+        labelTextStyle: WidgetStatePropertyAll(
+          GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600),
         ),
       ),
       pageTransitionsTheme: const PageTransitionsTheme(

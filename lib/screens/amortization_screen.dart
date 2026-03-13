@@ -1,16 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../core/theme/app_theme.dart';
 import '../core/widgets/app_scaffold.dart';
+import '../core/utils/currency_formatter.dart';
 import '../models/loan.dart';
 import '../models/amortization_entry.dart';
 import '../providers/settings_provider.dart';
-import '../core/utils/currency_formatter.dart';
 
 class AmortizationScreen extends StatefulWidget {
   final Loan loan;
-
   const AmortizationScreen({super.key, required this.loan});
 
   @override
@@ -18,287 +16,173 @@ class AmortizationScreen extends StatefulWidget {
 }
 
 class _AmortizationScreenState extends State<AmortizationScreen> {
-  double _extraPayment = 0;
-  late double _maxExtra;
-
-  @override
-  void initState() {
-    super.initState();
-    // Allow simulating up to 100% extra or at least 100 currency units
-    _maxExtra = (widget.loan.monthlyRequired * 1.5).clamp(100.0, 5000.0);
-  }
+  double _extraMonthly = 0;
 
   @override
   Widget build(BuildContext context) {
     final settings = Provider.of<SettingsProvider>(context);
-    final schedule = widget.loan.getAmortizationSchedule(
-      extraMonthlyPayment: _extraPayment,
-    );
+    final symbol = settings.currencySymbol;
+    
+    final schedule = widget.loan.getAmortizationSchedule(extraMonthlyPayment: _extraMonthly);
+    final original = widget.loan.getAmortizationSchedule(extraMonthlyPayment: 0);
 
-    // Calculate stats
-    double totalInterest = schedule.fold(0, (sum, item) => sum + item.interest);
-    int totalMonths = schedule.isNotEmpty ? schedule.last.monthIndex : 0;
-
-    // Original (approximate)
-    final originalSchedule = widget.loan.getAmortizationSchedule(
-      extraMonthlyPayment: 0,
-    );
-    double originalInterest = originalSchedule.fold(
-      0,
-      (sum, item) => sum + item.interest,
-    );
-    int originalMonths = originalSchedule.isNotEmpty
-        ? originalSchedule.last.monthIndex
-        : 0;
-
-    double savedInterest = originalInterest - totalInterest;
-    int savedMonths = originalMonths - totalMonths;
+    final originalInterest = original.fold(0.0, (s, e) => s + e.interest);
+    final simulatedInterest = schedule.fold(0.0, (s, e) => s + e.interest);
+    final interestSaved = originalInterest - simulatedInterest;
+    final monthsSaved = original.length - schedule.length;
 
     return AppScaffold(
-      useSafeArea: false,
       appBar: AppBar(
-        title: Text('Amortization Schedule'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        iconTheme: IconThemeData(color: AppTheme.textPrimary),
+        title: const Text('Amortization Schedule'),
       ),
       body: Column(
         children: [
-          _buildSimulationCard(settings, savedInterest, savedMonths),
-          Expanded(child: _buildScheduleList(schedule, settings)),
+          // Simulation Header
+          _buildSimulationHeader(symbol, interestSaved, monthsSaved),
+          
+          // Table
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              itemCount: schedule.length,
+              itemBuilder: (context, index) {
+                final entry = schedule[index];
+                return _buildAmortizationRow(entry, symbol, index == schedule.length - 1);
+              },
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildSimulationCard(
-    SettingsProvider settings,
-    double savedInterest,
-    int savedMonths,
-  ) {
+  Widget _buildSimulationHeader(String symbol, double saved, int months) {
     return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
       decoration: BoxDecoration(
-        color: AppTheme.primary,
-        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-        boxShadow: AppTheme.shadowPrimary,
+        color: AppTheme.surface,
+        border: Border(bottom: BorderSide(color: AppTheme.divider)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Payment Simulator',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 16),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Extra Monthly:', style: TextStyle(color: Colors.white70)),
-              Text(
-                formatCurrency(_extraPayment, symbol: settings.currencySymbol),
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 18,
-                ),
-              ),
+              Text('Simulate Extra Payment', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.textSecondary)),
+              Text(formatCurrency(_extraMonthly, symbol: symbol), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppTheme.primary)),
             ],
           ),
-          Slider(
-            value: _extraPayment,
-            min: 0,
-            max: _maxExtra,
-            activeColor: Colors.white,
-            inactiveColor: Colors.white24,
-            onChanged: (value) {
-              setState(() => _extraPayment = value);
-            },
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              activeTrackColor: AppTheme.primary,
+              inactiveTrackColor: AppTheme.surfaceLight,
+              thumbColor: AppTheme.primary,
+              trackHeight: 4,
+            ),
+            child: Slider(
+              value: _extraMonthly,
+              min: 0,
+              max: (widget.loan.monthlyRequired).clamp(500, 5000).toDouble(),
+              onChanged: (v) => setState(() => _extraMonthly = (v / 10).round() * 10),
+            ),
           ),
-          const Divider(color: Colors.white24),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Total Interest',
-                      style: TextStyle(color: Colors.white70, fontSize: 12),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      savedInterest > 0
-                          ? 'Save ${formatCurrency(savedInterest, symbol: settings.currencySymbol)}'
-                          : 'Standard',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                    ),
-                  ],
-                ),
+          if (saved > 0 || months > 0)
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppTheme.success.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                border: Border.all(color: AppTheme.success.withValues(alpha: 0.2)),
               ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      'Term Reduced',
-                      style: TextStyle(color: Colors.white70, fontSize: 12),
+              child: Row(
+                children: [
+                  Icon(Icons.auto_awesome_rounded, color: AppTheme.success, size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Simulation Result', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppTheme.success)),
+                        Text(
+                          'Save ${formatCurrency(saved, symbol: symbol)} and $months months',
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      savedMonths > 0 ? '$savedMonths months' : 'Standard',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
         ],
       ),
     );
   }
 
-  Widget _buildScheduleList(
-    List<AmortizationEntry> schedule,
-    SettingsProvider settings,
-  ) {
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      itemCount: schedule.length + 1, // Header + items
-      itemBuilder: (context, index) {
-        if (index == 0) return _buildListHeader();
-        final entry = schedule[index - 1];
-        return _buildListItem(entry, settings);
-      },
-    );
-  }
-
-  Widget _buildListHeader() {
+  Widget _buildAmortizationRow(AmortizationEntry entry, String symbol, bool isLast) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+      padding: const EdgeInsets.symmetric(vertical: 16),
       decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: AppTheme.divider)),
+        border: Border(bottom: BorderSide(color: AppTheme.divider.withValues(alpha: 0.5))),
       ),
       child: Row(
         children: [
-          SizedBox(width: 40, child: Text('Mo', style: _headerStyle)),
-          Expanded(
-            child: Text(
-              'Payment',
-              style: _headerStyle,
-              textAlign: TextAlign.right,
+          // Month bubble
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: AppTheme.surfaceLight,
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text('${entry.monthIndex}', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppTheme.textPrimary)),
+                Text(_getMonthLabel(entry.date), style: TextStyle(fontSize: 9, color: AppTheme.textLight, fontWeight: FontWeight.w600)),
+              ],
             ),
           ),
+          const SizedBox(width: 16),
+          // Principal / Interest
           Expanded(
-            child: Text(
-              'Principal',
-              style: _headerStyle,
-              textAlign: TextAlign.right,
-            ),
-          ),
-          Expanded(
-            child: Text(
-              'Interest',
-              style: _headerStyle,
-              textAlign: TextAlign.right,
-            ),
-          ),
-          Expanded(
-            child: Text(
-              'Balance',
-              style: _headerStyle,
-              textAlign: TextAlign.right,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildListItem(AmortizationEntry entry, SettingsProvider settings) {
-    final dateFormat = DateFormat.MMMd();
-    final isLast = entry.remainingBalance <= 0;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-      decoration: BoxDecoration(
-        color: indexIsEven(entry.monthIndex)
-            ? Colors.transparent
-            : AppTheme.surfaceLight.withValues(alpha: 0.3),
-        border: Border(bottom: BorderSide(color: AppTheme.divider, width: 0.5)),
-      ),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 40,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '${entry.monthIndex}',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Principal', style: TextStyle(fontSize: 12, color: AppTheme.textLight)),
+                    Text(formatCurrency(entry.principal, symbol: symbol), style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
+                  ],
                 ),
-                Text(
-                  dateFormat.format(entry.date),
-                  style: TextStyle(fontSize: 10, color: AppTheme.textLight),
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Interest', style: TextStyle(fontSize: 11, color: AppTheme.textLight)),
+                    Text(formatCurrency(entry.interest, symbol: symbol), style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textSecondary)),
+                  ],
                 ),
               ],
             ),
           ),
-          Expanded(
-            child: Text(
-              formatCurrency(entry.payment, symbol: ''),
-              textAlign: TextAlign.right,
-              style: _valStyle,
-            ),
-          ),
-          Expanded(
-            child: Text(
-              formatCurrency(entry.principal, symbol: ''),
-              textAlign: TextAlign.right,
-              style: _valStyle,
-            ),
-          ),
-          Expanded(
-            child: Text(
-              formatCurrency(entry.interest, symbol: ''),
-              textAlign: TextAlign.right,
-              style: _valStyle,
-            ),
-          ),
-          Expanded(
-            child: Text(
-              isLast ? '0' : formatCurrency(entry.remainingBalance, symbol: ''),
-              textAlign: TextAlign.right,
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-            ),
+          const SizedBox(width: 24),
+          // Remaining balance
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text('Balance', style: TextStyle(fontSize: 11, color: AppTheme.textLight)),
+              Text(formatCurrency(entry.remainingBalance, symbol: symbol), style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppTheme.primary)),
+            ],
           ),
         ],
       ),
     );
   }
 
-  bool indexIsEven(int index) => index % 2 == 0;
-
-  TextStyle get _headerStyle => TextStyle(
-    fontSize: 12,
-    fontWeight: FontWeight.bold,
-    color: AppTheme.textSecondary,
-  );
-  TextStyle get _valStyle =>
-      TextStyle(fontSize: 13, color: AppTheme.textPrimary);
+  String _getMonthLabel(DateTime date) {
+    const m = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+    return m[date.month - 1];
+  }
 }

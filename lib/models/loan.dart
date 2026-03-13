@@ -157,7 +157,7 @@ class Loan {
       schedule.add(
         AmortizationEntry(
           monthIndex: month,
-          date: currentDate.add(Duration(days: 30 * month)), // Approximate
+          date: DateTime(currentDate.year, currentDate.month + month, currentDate.day),
           payment: totalPayment,
           principal: principalPayment,
           interest: interestPayment,
@@ -177,9 +177,17 @@ class Loan {
 
   DateTime get nextPaymentDate {
     final now = DateTime.now();
-    var nextDate = DateTime(now.year, now.month, paymentDay);
+    // Clamp paymentDay to valid range for the month
+    int clampedDay(int year, int month) {
+      final lastDay = DateTime(year, month + 1, 0).day;
+      return paymentDay > lastDay ? lastDay : paymentDay;
+    }
+    var nextDate = DateTime(now.year, now.month, clampedDay(now.year, now.month));
     if (now.day > paymentDay) {
-      nextDate = DateTime(now.year, now.month + 1, paymentDay);
+      final nextMonth = now.month + 1;
+      final nextYear = nextMonth > 12 ? now.year + 1 : now.year;
+      final actualMonth = nextMonth > 12 ? nextMonth - 12 : nextMonth;
+      nextDate = DateTime(nextYear, actualMonth, clampedDay(nextYear, actualMonth));
     }
     return nextDate;
   }
@@ -226,6 +234,50 @@ class Loan {
               ?.map((p) => Payment.fromJson(p as Map<String, dynamic>))
               .toList() ??
           [],
+    );
+  }
+}
+
+/// Helper class for payoff simulations
+class PayoffSimulation {
+  final double totalInterest;
+  final int monthsToPayoff;
+  final double totalCost;
+
+  PayoffSimulation({
+    required this.totalInterest,
+    required this.monthsToPayoff,
+    required this.totalCost,
+  });
+}
+
+extension LoanSimulation on Loan {
+  PayoffSimulation simulatePayoff({double extraMonthlyPayment = 0}) {
+    double currentBalance = remainingDebt;
+    final r = interestRate / 100 / 12;
+    double interestSum = 0;
+    int months = 0;
+
+    // Safety break at 600 months (50 years)
+    while (currentBalance > 0.1 && months < 600) {
+      final interestPayment = currentBalance * r;
+      double totalMonthly = monthlyRequired + extraMonthlyPayment;
+      
+      if (totalMonthly > currentBalance + interestPayment) {
+        totalMonthly = currentBalance + interestPayment;
+      }
+
+      final principalPayment = totalMonthly - interestPayment;
+      
+      interestSum += interestPayment;
+      currentBalance -= principalPayment;
+      months++;
+    }
+
+    return PayoffSimulation(
+      totalInterest: interestSum,
+      monthsToPayoff: months,
+      totalCost: totalAmount + interestSum,
     );
   }
 }

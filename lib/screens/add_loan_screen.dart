@@ -1,167 +1,163 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:uuid/uuid.dart';
 import 'dart:math';
 import '../core/theme/app_theme.dart';
 import '../core/widgets/app_scaffold.dart';
 import '../core/widgets/animated_button.dart';
-import '../models/loan.dart';
-import '../services/storage_service.dart';
-import '../core/utils/input_formatters.dart';
 import '../core/constants/loan_icons.dart';
 import '../core/utils/currency_formatter.dart';
+import '../core/utils/input_formatters.dart';
+import '../models/loan.dart';
+import '../services/storage_service.dart';
+import 'package:provider/provider.dart';
+import '../providers/settings_provider.dart';
 
-/// Screen to add a new loan
 class AddLoanScreen extends StatefulWidget {
   const AddLoanScreen({super.key});
-
   @override
   State<AddLoanScreen> createState() => _AddLoanScreenState();
 }
 
-class _AddLoanScreenState extends State<AddLoanScreen>
-    with SingleTickerProviderStateMixin {
-  final _formKey = GlobalKey<FormState>();
+class _AddLoanScreenState extends State<AddLoanScreen> {
+  final _storage = StorageService();
+  final _pageController = PageController();
 
-  // Controllers
+  int _currentStep = 0;
+  final _totalSteps = 4;
+
+  // Step 1: Category
+  String _selectedIcon = 'default';
   final _nameController = TextEditingController();
+
+  // Step 2: Amount
   final _amountController = TextEditingController();
   final _rateController = TextEditingController();
-  final _monthsController = TextEditingController();
 
-  final _storage = StorageService();
+  // Step 3: Schedule
+  final _termController = TextEditingController();
+  bool _termInYears = false;
+  int _paymentDay = 1;
 
-  int _selectedDay = 15;
-  String _selectedIcon = 'default';
-  bool _isYears = false; // Toggle for term unit
-  bool _isLoading = false;
-  double _calculatedMonthlyPayment = 0;
-
-  late AnimationController _animController;
-  late Animation<double> _fadeAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _animController = AnimationController(
-      vsync: this,
-      duration: AppTheme.animMedium,
-    );
-    _fadeAnimation = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _animController, curve: AppTheme.curveDefault),
-    );
-    _animController.forward();
-
-    _amountController.addListener(_updateEstimate);
-    _rateController.addListener(_updateEstimate);
-    _monthsController.addListener(_updateEstimate);
-  }
-
-  void _updateEstimate() {
-    // Remove commas for parsing
-    final amountText = _amountController.text.replaceAll(',', '');
-    final amount = double.tryParse(amountText) ?? 0;
-
-    final rate = double.tryParse(_rateController.text) ?? 0;
-
-    int months = int.tryParse(_monthsController.text) ?? 0;
-    if (_isYears) months *= 12; // Convert years to months for calc
-
-    if (amount > 0 && months > 0) {
-      double monthly;
-      if (rate <= 0) {
-        monthly = amount / months;
-      } else {
-        final r = (rate / 100) / 12;
-        monthly = amount * r * (pow(1 + r, months)) / (pow(1 + r, months) - 1);
-      }
-      setState(() {
-        _calculatedMonthlyPayment = monthly;
-      });
-    } else {
-      if (_calculatedMonthlyPayment != 0) {
-        setState(() => _calculatedMonthlyPayment = 0);
-      }
-    }
-  }
-
-  void _toggleTermUnit() {
-    setState(() {
-      _isYears = !_isYears;
-      _updateEstimate(); // Recalculate with new unit
-    });
-  }
+  bool _isSaving = false;
 
   @override
   void dispose() {
-    _animController.dispose();
+    _pageController.dispose();
     _nameController.dispose();
     _amountController.dispose();
     _rateController.dispose();
-    _monthsController.dispose();
+    _termController.dispose();
     super.dispose();
   }
 
-  Future<void> _saveLoan() async {
-    if (_isLoading) return;
-    if (!_formKey.currentState!.validate()) return;
-
-    final rawAmount = _amountController.text.replaceAll(RegExp(r'[^0-9.]'), '');
-    final amount = double.tryParse(rawAmount);
-    final rate = double.tryParse(_rateController.text.trim());
-    int? months = int.tryParse(_monthsController.text.trim());
-    if (_isYears && months != null) {
-      months *= 12;
-    }
-
-    if (amount == null ||
-        amount <= 0 ||
-        rate == null ||
-        rate < 0 ||
-        months == null ||
-        months <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter valid loan details'),
-          backgroundColor: AppTheme.error,
-        ),
+  void _nextStep() {
+    if (!_validateCurrentStep()) return;
+    if (_currentStep < _totalSteps - 1) {
+      setState(() => _currentStep++);
+      _pageController.nextPage(
+        duration: AppTheme.animMedium,
+        curve: AppTheme.curveDefault,
       );
-      return;
+      HapticFeedback.selectionClick();
     }
+  }
 
-    setState(() => _isLoading = true);
+  void _prevStep() {
+    if (_currentStep > 0) {
+      setState(() => _currentStep--);
+      _pageController.previousPage(
+        duration: AppTheme.animMedium,
+        curve: AppTheme.curveDefault,
+      );
+    } else {
+      Navigator.pop(context);
+    }
+  }
 
-    var didSave = false;
+  bool _validateCurrentStep() {
+    switch (_currentStep) {
+      case 0:
+        if (_nameController.text.trim().isEmpty) {
+          _showError('Please enter a loan name');
+          return false;
+        }
+        return true;
+      case 1:
+        final amount = double.tryParse(
+          _amountController.text.replaceAll(RegExp(r'[^\d.]'), ''),
+        );
+        final rate = double.tryParse(_rateController.text);
+        if (amount == null || amount <= 0) {
+          _showError('Please enter a valid amount');
+          return false;
+        }
+        if (rate == null || rate < 0 || rate > 100) {
+          _showError('Please enter a valid interest rate (0-100)');
+          return false;
+        }
+        return true;
+      case 2:
+        final term = int.tryParse(_termController.text);
+        if (term == null || term <= 0) {
+          _showError('Please enter a valid term');
+          return false;
+        }
+        return true;
+      default:
+        return true;
+    }
+  }
+
+  void _showError(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), backgroundColor: AppTheme.error),
+    );
+  }
+
+  Future<void> _saveLoan() async {
+    setState(() => _isSaving = true);
     try {
+      final amount = double.parse(
+        _amountController.text.replaceAll(RegExp(r'[^\d.]'), ''),
+      );
+      final rate = double.parse(_rateController.text);
+      final rawTerm = int.parse(_termController.text);
+      final termMonths = _termInYears ? rawTerm * 12 : rawTerm;
+
       final loan = Loan(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        id: const Uuid().v4(),
         name: _nameController.text.trim(),
         totalAmount: amount,
         interestRate: rate,
-        termMonths: months,
-        paymentDay: _selectedDay,
+        termMonths: termMonths,
+        paymentDay: _paymentDay,
         createdAt: DateTime.now(),
+        payments: [],
         iconId: _selectedIcon,
       );
 
       await _storage.addLoan(loan);
-      didSave = true;
-
-      if (mounted) {
-        Navigator.of(context).pop(true);
-      }
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not save loan. Please try again.'),
-          backgroundColor: AppTheme.error,
-        ),
-      );
-    } finally {
-      if (mounted && !didSave) {
-        setState(() => _isLoading = false);
-      }
+      HapticFeedback.mediumImpact();
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      _showError('Failed to create loan');
     }
+    setState(() => _isSaving = false);
+  }
+
+  double? get _estimatedMonthly {
+    final amount = double.tryParse(
+      _amountController.text.replaceAll(RegExp(r'[^\d.]'), ''),
+    );
+    final rate = double.tryParse(_rateController.text);
+    final rawTerm = int.tryParse(_termController.text);
+    if (amount == null || rate == null || rawTerm == null) return null;
+    if (amount <= 0 || rawTerm <= 0) return null;
+    final termMonths = _termInYears ? rawTerm * 12 : rawTerm;
+    if (rate == 0) return amount / termMonths;
+    final r = rate / 100 / 12;
+    return amount * r * pow(1 + r, termMonths) / (pow(1 + r, termMonths) - 1);
   }
 
   @override
@@ -170,271 +166,33 @@ class _AddLoanScreenState extends State<AddLoanScreen>
       useSafeArea: false,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
-        leading: AnimatedIconButton(
-          icon: Icons.close_rounded,
-          onPressed: () => Navigator.of(context).pop(),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded),
+          onPressed: _prevStep,
         ),
-        title: Text('Add New Loan'),
-      ),
-      body: FadeTransition(
-        opacity: _fadeAnimation,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildHeader(),
-                const SizedBox(height: 24),
-                _buildIconPicker(),
-                const SizedBox(height: 24),
-
-                // Name
-                _buildTextField(
-                  controller: _nameController,
-                  label: 'Loan Name',
-                  hint: 'e.g., Tesla Model 3',
-                  icon: Icons.label_outline_rounded,
-                  validator: (value) => (value == null || value.trim().isEmpty)
-                      ? 'Required'
-                      : null,
-                ),
-                const SizedBox(height: 20),
-
-                // Amount (Formatted)
-                _buildTextField(
-                  controller: _amountController,
-                  label: 'Total Loan Amount',
-                  hint: '20,000',
-                  icon: Icons.account_balance_outlined,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [CurrencyInputFormatter()],
-                  suffix: '₼',
-                  validator: (value) {
-                    if (value == null || value.isEmpty) return 'Required';
-                    final v = double.tryParse(value.replaceAll(',', ''));
-                    if (v == null || v <= 0) return 'Invalid amount';
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 20),
-
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      flex: 4,
-                      child: _buildTextField(
-                        controller: _rateController,
-                        label: 'Interest (%)',
-                        hint: '14.5',
-                        icon: Icons.percent_rounded,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        suffix: '%',
-                        validator: (value) {
-                          if (value == null || value.isEmpty) return 'Req';
-                          final v = double.tryParse(value);
-                          if (v == null) return 'Invalid';
-                          if (v < 0) return 'Positive only';
-                          return null;
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      flex: 5,
-                      child: Stack(
-                        children: [
-                          _buildTextField(
-                            controller: _monthsController,
-                            label: _isYears ? 'Term (Years)' : 'Term (Months)',
-                            hint: _isYears ? '3' : '36',
-                            icon: Icons.calendar_month_rounded,
-                            keyboardType: TextInputType.number,
-                            validator: (value) {
-                              if (value == null || value.isEmpty) return 'Req';
-                              final v = int.tryParse(value);
-                              if (v == null || v <= 0) return 'Must be > 0';
-                              return null;
-                            },
-                          ),
-                          Positioned(
-                            right: 0,
-                            top: 28,
-                            child: Padding(
-                              padding: const EdgeInsets.only(right: 8.0),
-                              child: TextButton(
-                                onPressed: _toggleTermUnit,
-                                style: TextButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 8,
-                                  ),
-                                  minimumSize: Size.zero,
-                                  tapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                  backgroundColor: AppTheme.primary.withValues(
-                                    alpha: 0.1,
-                                  ),
-                                  foregroundColor: AppTheme.primary,
-                                ),
-                                child: Text(
-                                  _isYears ? 'Years' : 'Months',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 24),
-
-                // Calculated Estimate Card
-                AnimatedOpacity(
-                  opacity: _calculatedMonthlyPayment > 0 ? 1.0 : 0.0,
-                  duration: AppTheme.animMedium,
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primary.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                      border: Border.all(
-                        color: AppTheme.primary.withValues(alpha: 0.2),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Estimated Monthly:',
-                          style: TextStyle(
-                            color: AppTheme.textSecondary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        Text(
-                          formatCurrency(_calculatedMonthlyPayment),
-                          style: TextStyle(
-                            color: AppTheme.primary,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 24),
-                _buildDayPicker(),
-                const SizedBox(height: 40),
-                AnimatedButton(
-                  label: 'Create Loan',
-                  icon: Icons.add_chart_rounded,
-                  isLoading: _isLoading,
-                  onPressed: _saveLoan,
-                ),
-                const SizedBox(height: 20),
-              ],
+        title: Text('Step ${_currentStep + 1} of $_totalSteps'),
+        actions: [
+          if (_currentStep > 0)
+            TextButton(
+              onPressed: _prevStep,
+              child: const Text('Back'),
             ),
-          ),
-        ),
+        ],
       ),
-    );
-  }
-
-  Widget _buildIconPicker() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Category Icon',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: AppTheme.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 60,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: kLoanIcons.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 12),
-            itemBuilder: (context, index) {
-              final key = kLoanIcons.keys.elementAt(index);
-              final icon = kLoanIcons[key]!;
-              final color = kIconColors[key]!;
-              final isSelected = _selectedIcon == key;
-
-              return GestureDetector(
-                onTap: () => setState(() => _selectedIcon = key),
-                child: AnimatedContainer(
-                  duration: AppTheme.animFast,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? color.withValues(alpha: 0.15)
-                        : AppTheme.surfaceLight,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: isSelected ? color : Colors.transparent,
-                      width: 2,
-                    ),
-                  ),
-                  child: Icon(
-                    icon,
-                    color: isSelected ? color : AppTheme.textLight,
-                    size: 24,
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildHeader() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: AppTheme.primaryGradient,
-        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-        boxShadow: AppTheme.shadowPrimary,
-      ),
-      child: const Row(
+      body: Column(
         children: [
-          Icon(Icons.auto_awesome, color: Colors.white, size: 24),
-          SizedBox(width: 16),
+          // Progress dots
+          _buildProgressDots(),
+          // Pages
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: PageView(
+              controller: _pageController,
+              physics: const NeverScrollableScrollPhysics(),
               children: [
-                Text(
-                  'Let\'s set you up!',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  ),
-                ),
-                Text(
-                  'Fill in the details below.',
-                  style: TextStyle(fontSize: 13, color: Colors.white70),
-                ),
+                _buildStep1Category(),
+                _buildStep2Amount(),
+                _buildStep3Schedule(),
+                _buildStep4Review(),
               ],
             ),
           ),
@@ -443,110 +201,357 @@ class _AddLoanScreenState extends State<AddLoanScreen>
     );
   }
 
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String label,
-    required String hint,
-    required IconData icon,
-    TextInputType? keyboardType,
-    String? suffix,
-    List<TextInputFormatter>? inputFormatters,
-    String? Function(String?)? validator,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: AppTheme.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 8),
-        TextFormField(
-          controller: controller,
-          keyboardType: keyboardType,
-          validator: validator,
-          inputFormatters: inputFormatters,
-          decoration: InputDecoration(
-            hintText: hint,
-            prefixIcon: Icon(icon, color: AppTheme.textLight, size: 20),
-            suffixText: suffix,
-            contentPadding: const EdgeInsets.only(
-              left: 48,
-              right: 16,
-              top: 16,
-              bottom: 16,
+  Widget _buildProgressDots() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      child: Row(
+        children: List.generate(_totalSteps, (i) {
+          final isActive = i <= _currentStep;
+          return Expanded(
+            child: AnimatedContainer(
+              duration: AppTheme.animFast,
+              height: 4,
+              margin: EdgeInsets.only(right: i < _totalSteps - 1 ? 6 : 0),
+              decoration: BoxDecoration(
+                color: isActive ? AppTheme.primary : AppTheme.surfaceLight,
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
-            suffixStyle: TextStyle(
-              fontWeight: FontWeight.w600,
-              color: AppTheme.textSecondary,
-            ),
-          ),
-        ),
-      ],
+          );
+        }),
+      ),
     );
   }
 
-  Widget _buildDayPicker() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Monthly Payment Due Day',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: AppTheme.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          decoration: BoxDecoration(
-            color: AppTheme.surfaceLight,
-            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-            border: Border.all(color: AppTheme.divider),
-          ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<int>(
-              value: _selectedDay,
-              isExpanded: true,
-              icon: Icon(
-                Icons.expand_more_rounded,
-                color: AppTheme.textSecondary,
-              ),
-              items: List.generate(28, (i) => i + 1).map((day) {
-                return DropdownMenuItem(
-                  value: day,
-                  child: Row(
+  // Step 1: Category + Name
+  Widget _buildStep1Category() {
+    final icons = kLoanIcons.keys.toList();
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('What type of loan?',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800,
+                  color: AppTheme.textPrimary)),
+          const SizedBox(height: 8),
+          Text('Select a category and name your loan',
+              style: TextStyle(fontSize: 15, color: AppTheme.textLight)),
+          const SizedBox(height: 24),
+
+          // Icon Grid
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 4,
+              mainAxisSpacing: 12,
+              crossAxisSpacing: 12,
+              childAspectRatio: 0.9,
+            ),
+            itemCount: icons.length,
+            itemBuilder: (_, i) {
+              final id = icons[i];
+              final selected = _selectedIcon == id;
+              return GestureDetector(
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  setState(() => _selectedIcon = id);
+                },
+                child: AnimatedContainer(
+                  duration: AppTheme.animFast,
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? AppTheme.primary.withValues(alpha: 0.1)
+                        : AppTheme.surfaceLight.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                    border: Border.all(
+                      color: selected ? AppTheme.primary : Colors.transparent,
+                      width: 2,
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(
-                        Icons.calendar_today_rounded,
-                        size: 16,
-                        color: AppTheme.primary,
-                      ),
-                      const SizedBox(width: 12),
+                      buildGradientIcon(id, size: 36),
+                      const SizedBox(height: 6),
                       Text(
-                        'Day $day of every month',
+                        kLoanIconLabel(id),
                         style: TextStyle(
-                          fontWeight: FontWeight.w500,
-                          color: AppTheme.textPrimary,
+                          fontSize: 10,
+                          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                          color: selected ? AppTheme.primary : AppTheme.textLight,
                         ),
+                        textAlign: TextAlign.center,
                       ),
                     ],
                   ),
+                ),
+              );
+            },
+          ),
+
+          const SizedBox(height: 24),
+          // Name
+          TextFormField(
+            controller: _nameController,
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(
+              labelText: 'Loan Name',
+              prefixIcon: Icon(Icons.edit_rounded),
+              hintText: 'e.g. Home Mortgage',
+            ),
+          ),
+          const SizedBox(height: 32),
+          AnimatedButton(label: 'Continue', icon: Icons.arrow_forward_rounded,
+              onPressed: _nextStep),
+        ],
+      ),
+    );
+  }
+
+  // Step 2: Amount + Rate
+  Widget _buildStep2Amount() {
+    final settings = Provider.of<SettingsProvider>(context, listen: false);
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('How much?',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800,
+                  color: AppTheme.textPrimary)),
+          const SizedBox(height: 8),
+          Text('Enter the loan amount and interest rate',
+              style: TextStyle(fontSize: 15, color: AppTheme.textLight)),
+          const SizedBox(height: 24),
+
+          TextFormField(
+            controller: _amountController,
+            keyboardType: TextInputType.number,
+            inputFormatters: [CurrencyInputFormatter()],
+            style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800),
+            decoration: InputDecoration(
+              labelText: 'Loan Amount',
+              prefixIcon: const Icon(Icons.payments_rounded),
+              suffixText: settings.currencySymbol,
+            ),
+          ),
+          const SizedBox(height: 20),
+          TextFormField(
+            controller: _rateController,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Annual Interest Rate',
+              prefixIcon: Icon(Icons.percent_rounded),
+              suffixText: '%',
+            ),
+          ),
+          const SizedBox(height: 32),
+          AnimatedButton(label: 'Continue', icon: Icons.arrow_forward_rounded,
+              onPressed: _nextStep),
+        ],
+      ),
+    );
+  }
+
+  // Step 3: Schedule
+  Widget _buildStep3Schedule() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Payment schedule',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800,
+                  color: AppTheme.textPrimary)),
+          const SizedBox(height: 8),
+          Text('Set the loan term and payment day',
+              style: TextStyle(fontSize: 15, color: AppTheme.textLight)),
+          const SizedBox(height: 24),
+
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: _termController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: InputDecoration(
+                    labelText: _termInYears ? 'Years' : 'Months',
+                    prefixIcon: const Icon(Icons.calendar_month_rounded),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              // Toggle Years/Months
+              GestureDetector(
+                onTap: () => setState(() => _termInYears = !_termInYears),
+                child: AnimatedContainer(
+                  duration: AppTheme.animFast,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surfaceLight,
+                    borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                    border: Border.all(color: AppTheme.divider),
+                  ),
+                  child: Text(
+                    _termInYears ? 'Years' : 'Months',
+                    style: TextStyle(fontWeight: FontWeight.w600,
+                        color: AppTheme.primary),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // Payment Day
+          Text('Payment Due Day',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600,
+                  color: AppTheme.textSecondary)),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 44,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: 28,
+              itemBuilder: (_, i) {
+                final day = i + 1;
+                final selected = _paymentDay == day;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: GestureDetector(
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      setState(() => _paymentDay = day);
+                    },
+                    child: AnimatedContainer(
+                      duration: AppTheme.animFast,
+                      width: 44,
+                      decoration: BoxDecoration(
+                        gradient: selected ? AppTheme.primaryGradient : null,
+                        color: selected ? null : AppTheme.surfaceLight,
+                        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                        border: Border.all(
+                          color: selected ? Colors.transparent : AppTheme.divider,
+                        ),
+                      ),
+                      child: Center(
+                        child: Text(
+                          '$day',
+                          style: TextStyle(
+                            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                            color: selected ? Colors.white : AppTheme.textSecondary,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 );
-              }).toList(),
-              onChanged: (value) {
-                if (value != null) setState(() => _selectedDay = value);
               },
             ),
           ),
-        ),
-      ],
+          const SizedBox(height: 32),
+          AnimatedButton(label: 'Continue', icon: Icons.arrow_forward_rounded,
+              onPressed: _nextStep),
+        ],
+      ),
+    );
+  }
+
+  // Step 4: Review
+  Widget _buildStep4Review() {
+    final settings = Provider.of<SettingsProvider>(context);
+    final symbol = settings.currencySymbol;
+    final amount = double.tryParse(
+      _amountController.text.replaceAll(RegExp(r'[^\d.]'), ''),
+    );
+    final rate = double.tryParse(_rateController.text);
+    final rawTerm = int.tryParse(_termController.text);
+    final termMonths = _termInYears ? (rawTerm ?? 0) * 12 : (rawTerm ?? 0);
+    final monthly = _estimatedMonthly;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Review & Confirm',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800,
+                  color: AppTheme.textPrimary)),
+          const SizedBox(height: 8),
+          Text('Make sure everything looks correct',
+              style: TextStyle(fontSize: 15, color: AppTheme.textLight)),
+          const SizedBox(height: 24),
+
+          // Summary card
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: AppTheme.primaryGradient,
+              borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+              boxShadow: AppTheme.shadowPrimary,
+            ),
+            child: Column(
+              children: [
+                buildGradientIcon(_selectedIcon, size: 56),
+                const SizedBox(height: 12),
+                Text(
+                  _nameController.text.trim(),
+                  style: const TextStyle(color: Colors.white, fontSize: 20,
+                      fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  kLoanIconLabel(_selectedIcon),
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.7),
+                      fontSize: 13),
+                ),
+                const SizedBox(height: 20),
+                Divider(color: Colors.white.withValues(alpha: 0.2)),
+                const SizedBox(height: 12),
+                _reviewRow('Amount', formatCurrency(amount ?? 0, symbol: symbol)),
+                _reviewRow('Interest Rate', '${rate?.toStringAsFixed(1) ?? '0'}%'),
+                _reviewRow('Term', '$termMonths months'),
+                _reviewRow('Payment Day', 'Day $_paymentDay'),
+                if (monthly != null) ...[
+                  const SizedBox(height: 8),
+                  Divider(color: Colors.white.withValues(alpha: 0.2)),
+                  const SizedBox(height: 8),
+                  _reviewRow('Est. Monthly',
+                      formatCurrency(monthly, symbol: symbol), isBold: true),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 32),
+          AnimatedButton(
+            label: 'Create Loan',
+            icon: Icons.check_rounded,
+            isLoading: _isSaving,
+            onPressed: _saveLoan,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _reviewRow(String label, String value, {bool isBold = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label,
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.7),
+                  fontSize: 14)),
+          Text(value,
+              style: TextStyle(color: Colors.white, fontSize: 14,
+                  fontWeight: isBold ? FontWeight.w800 : FontWeight.w600)),
+        ],
+      ),
     );
   }
 }

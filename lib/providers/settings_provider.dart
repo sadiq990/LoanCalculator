@@ -4,17 +4,20 @@ import 'package:shared_preferences/shared_preferences.dart';
 class SettingsProvider extends ChangeNotifier {
   static const String keyTheme = 'theme_mode';
   static const String keyCurrency = 'currency_symbol';
-  static const String keyReminderTime = 'reminder_hour';
+  static const String keyReminderTime = 'reminderTime';
+  static const String keyOnboarded = 'isOnboarded';
 
   ThemeMode _themeMode = ThemeMode.system;
-  String _currencySymbol = '₼';
+  String _currencySymbol = '\$';
   TimeOfDay _reminderTime = const TimeOfDay(hour: 9, minute: 0);
   bool _biometricEnabled = false;
+  bool _isOnboarded = false;
 
   ThemeMode get themeMode => _themeMode;
   String get currencySymbol => _currencySymbol;
   TimeOfDay get reminderTime => _reminderTime;
   bool get biometricEnabled => _biometricEnabled;
+  bool get isOnboarded => _isOnboarded;
 
   SettingsProvider() {
     _loadSettings();
@@ -24,8 +27,7 @@ class SettingsProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
 
     // Theme
-    final themeIndex =
-        prefs.getInt(keyTheme) ?? 0; // 0: System, 1: Light, 2: Dark
+    final themeIndex = prefs.getInt(keyTheme) ?? 0;
     if (themeIndex == 1) {
       _themeMode = ThemeMode.light;
     } else if (themeIndex == 2) {
@@ -35,24 +37,17 @@ class SettingsProvider extends ChangeNotifier {
     }
 
     // Currency
-    _currencySymbol = prefs.getString(keyCurrency) ?? '₼';
+    _currencySymbol = prefs.getString(keyCurrency) ?? '\$';
 
-    // Reminder Time (Simple hour storage for MVP)
-    final timePart = prefs.getString('reminderTime')?.split(':');
-    if (timePart != null && timePart.length == 2) {
-      _reminderTime = TimeOfDay(
-        hour: int.parse(timePart[0]),
-        minute: int.parse(timePart[1]),
-      );
+    // Reminder Time
+    final timeStr = prefs.getString(keyReminderTime);
+    if (timeStr != null && timeStr.contains(':')) {
+      final parts = timeStr.split(':');
+      _reminderTime = TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
     }
+    
     _biometricEnabled = prefs.getBool('biometricEnabled') ?? false;
-    notifyListeners();
-  }
-
-  Future<void> setBiometricEnabled(bool value) async {
-    _biometricEnabled = value;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('biometricEnabled', value);
+    _isOnboarded = prefs.getBool(keyOnboarded) ?? false;
     notifyListeners();
   }
 
@@ -77,7 +72,20 @@ class SettingsProvider extends ChangeNotifier {
     _reminderTime = time;
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(keyReminderTime, time.hour);
-    // Note: Storing only hour for simplicity as requested "9:00 AM" type setting
+    await prefs.setString(keyReminderTime, '${time.hour}:${time.minute}');
+  }
+
+  Future<void> setBiometricEnabled(bool value) async {
+    _biometricEnabled = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('biometricEnabled', value);
+  }
+
+  Future<void> completeOnboarding() async {
+    _isOnboarded = true;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(keyOnboarded, true);
   }
 }

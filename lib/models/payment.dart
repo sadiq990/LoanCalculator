@@ -1,3 +1,5 @@
+import 'package:uuid/uuid.dart';
+
 /// Represents a single payment made towards a loan
 class Payment {
   final String id;
@@ -35,7 +37,7 @@ class Payment {
   /// Create a new payment with current timestamp
   factory Payment.create({required double amount, String? note}) {
     return Payment(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: const Uuid().v4(),
       amount: amount,
       date: DateTime.now(),
       note: note,

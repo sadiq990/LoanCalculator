@@ -3,10 +3,12 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:provider/provider.dart';
 import '../core/theme/app_theme.dart';
 import '../core/widgets/app_scaffold.dart';
-import '../models/loan.dart';
-import '../providers/settings_provider.dart';
-import '../services/storage_service.dart';
+import '../core/widgets/glass_card.dart';
 import '../core/utils/currency_formatter.dart';
+import '../models/loan.dart';
+import '../services/storage_service.dart';
+import '../providers/settings_provider.dart';
+import 'payoff_simulator_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -15,395 +17,406 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> {
+class _DashboardScreenState extends State<DashboardScreen>
+    with SingleTickerProviderStateMixin {
   final StorageService _storage = StorageService();
   List<Loan> _loans = [];
   bool _isLoading = true;
+  late AnimationController _animController;
 
   @override
   void initState() {
     super.initState();
-    _loadData();
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    _loadLoans();
   }
 
-  Future<void> _loadData() async {
+  @override
+  void dispose() {
+    _animController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadLoans() async {
     final loans = await _storage.getLoans();
     if (mounted) {
       setState(() {
         _loans = loans;
         _isLoading = false;
       });
+      _animController.forward();
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final settings = Provider.of<SettingsProvider>(context);
+    final symbol = settings.currencySymbol;
 
-    // Calculate Stats
-    double totalDebt = 0;
-    double totalInterest = 0;
-
-    for (var loan in _loans) {
-      totalDebt += loan.remainingDebt;
-      // Estimate total interest (simplified)
-      final schedule = loan.getAmortizationSchedule(extraMonthlyPayment: 0);
-      totalInterest += schedule.fold(0.0, (sum, entry) => sum + entry.interest);
+    if (_isLoading) {
+      return const AppScaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    double totalProjected = totalDebt + totalInterest;
+    final activeLoans = _loans.where((l) => !l.isPaidOff).toList();
+    final totalDebt = activeLoans.fold(0.0, (s, l) => s + l.totalRemaining);
+    final totalPaid = _loans.fold(0.0, (s, l) => s + l.totalPaid);
+    final totalInterest = activeLoans.fold(0.0, (s, l) =>
+        s + (l.totalContractValue - l.totalAmount));
+    final totalPrincipal = activeLoans.fold(0.0, (s, l) => s + l.totalAmount);
+    final totalProjected = totalPrincipal + totalInterest;
+
+    // Debt free estimate
+    String debtFreeText = 'No active loans';
+    if (activeLoans.isNotEmpty) {
+      final totalMonthlyPayment = activeLoans.fold(0.0, (s, l) => s + l.monthlyRequired);
+      if (totalMonthlyPayment > 0) {
+        final monthsLeft = (totalDebt / totalMonthlyPayment).ceil();
+        final debtFreeDate = DateTime.now().add(Duration(days: monthsLeft * 30));
+        final years = monthsLeft ~/ 12;
+        final months = monthsLeft % 12;
+        debtFreeText = years > 0
+            ? '${debtFreeDate.month}/${debtFreeDate.year} (~${years}y ${months}m)'
+            : '${debtFreeDate.month}/${debtFreeDate.year} (~${months}m)';
+      }
+    }
 
     return AppScaffold(
-      useSafeArea: false,
-      backgroundStyle: AppBackgroundStyle.solid,
-      backgroundColor: AppTheme.primary,
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Colors.white))
-          : Stack(
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
+        children: [
+          // Title
+          Text(
+            'Statistics',
+            style: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.5,
+              color: AppTheme.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Summary header card
+          _buildSummaryCard(totalDebt, totalPaid, symbol),
+          const SizedBox(height: 16),
+
+          // 3 stat cards row
+          _buildStatCards(totalPrincipal, totalInterest, activeLoans.length, symbol),
+          const SizedBox(height: 24),
+
+          // Donut chart section
+          if (totalProjected > 0) ...[
+            Text(
+              'Debt Breakdown',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: AppTheme.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 16),
+            _buildDonutChart(totalPrincipal, totalInterest, symbol),
+            const SizedBox(height: 24),
+          ],
+
+          // Per-loan breakdown
+          if (activeLoans.isNotEmpty) ...[
+            Text(
+              'By Loan',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: AppTheme.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            ...activeLoans.map((l) => _buildLoanBar(l, totalDebt, symbol)),
+            const SizedBox(height: 24),
+          ],
+
+          // Debt Free date
+          GlassCard(
+            child: Row(
               children: [
-                // 1. Top Header Background & Main Stats
                 Container(
-                  height: MediaQuery.of(context).size.height * 0.45,
-                  width: double.infinity,
-                  decoration: const BoxDecoration(
-                    gradient: AppTheme.primaryGradient,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppTheme.success.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusMd),
                   ),
-                  padding: const EdgeInsets.fromLTRB(24, 60, 24, 0),
+                  child: Icon(Icons.event_available_rounded, color: AppTheme.success),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Header Row
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          IconButton(
-                            onPressed: () => Navigator.pop(context),
-                            icon: const Icon(Icons.arrow_back_ios_new_rounded),
-                            color: Colors.white,
-                            style: IconButton.styleFrom(
-                              backgroundColor: Colors.white.withValues(
-                                alpha: 0.2,
-                              ),
-                              padding: const EdgeInsets.all(12),
-                            ),
-                          ),
-                          const Text(
-                            'Statistic',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(width: 48), // Balance for back button
-                        ],
-                      ),
-                      const SizedBox(height: 32),
-
-                      // Main Balance Display
-                      Center(
-                        child: Column(
-                          children: [
-                            Text(
-                              formatCurrency(
-                                totalProjected,
-                                symbol: settings.currencySymbol,
-                              ),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 40,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: -1.0,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Total Income', // As per user image request
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.8),
-                                fontSize: 16,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            const SizedBox(height: 24),
-                            // Action Button
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 20,
-                                vertical: 10,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.2),
-                                borderRadius: BorderRadius.circular(
-                                  AppTheme.radiusFull,
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(
-                                    Icons.ios_share_rounded,
-                                    color: Colors.white,
-                                    size: 16,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  const Text(
-                                    'Share Value',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
+                      Text('Estimated Debt Free',
+                          style: TextStyle(fontSize: 13, color: AppTheme.textLight)),
+                      const SizedBox(height: 2),
+                      Text(
+                        debtFreeText,
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.textPrimary,
                         ),
                       ),
                     ],
                   ),
                 ),
-
-                // 2. Bottom Content Sheet
-                Align(
-                  alignment: Alignment.bottomCenter,
-                  child: Container(
-                    height: MediaQuery.of(context).size.height * 0.60,
-                    decoration: BoxDecoration(
-                      color: AppTheme.cardBg,
-                      borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(AppTheme.radiusSheet),
-                      ),
-                    ),
-                    child: ListView(
-                      padding: const EdgeInsets.all(24),
-                      physics: const BouncingScrollPhysics(),
-                      children: [
-                        // Toggle Tabs
-                        Row(
-                          children: [
-                            Expanded(child: _buildToggleTab('Income', true)),
-                            const SizedBox(width: 16),
-                            Expanded(child: _buildToggleTab('Expenses', false)),
-                          ],
-                        ),
-                        const SizedBox(height: 32),
-
-                        // Chart Section
-                        SizedBox(
-                          height: 200,
-                          child: PieChart(
-                            PieChartData(
-                              sectionsSpace: 4,
-                              centerSpaceRadius: 40,
-                              sections: [
-                                PieChartSectionData(
-                                  color: AppTheme.primary,
-                                  value: totalDebt,
-                                  title:
-                                      '${((totalDebt / totalProjected) * 100).toStringAsFixed(0)}%',
-                                  radius: 60,
-                                  titleStyle: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                                PieChartSectionData(
-                                  color: AppTheme.primary.withValues(
-                                    alpha: 0.3,
-                                  ),
-                                  value: totalInterest,
-                                  title:
-                                      '${((totalInterest / totalProjected) * 100).toStringAsFixed(0)}%',
-                                  radius: 50,
-                                  titleStyle: const TextStyle(
-                                    color: AppTheme.primary,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 24),
-
-                        // Legend
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            _buildLegendItem('Principal', AppTheme.primary),
-                            const SizedBox(width: 24),
-                            _buildLegendItem(
-                              'Interest',
-                              AppTheme.primary.withValues(alpha: 0.3),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 32),
-                        _buildSimulatorButton(context),
-                        const SizedBox(height: 16),
-                        _buildDebtFreeEstimator(settings),
-                      ],
-                    ),
-                  ),
-                ),
               ],
             ),
-    );
-  }
-
-  Widget _buildToggleTab(String title, bool isSelected) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      decoration: BoxDecoration(
-        color: isSelected ? Colors.white : Colors.transparent,
-        borderRadius: BorderRadius.circular(AppTheme.radiusFull),
-        boxShadow: isSelected ? AppTheme.shadowSm : null,
-      ),
-      child: Center(
-        child: Text(
-          title,
-          style: TextStyle(
-            color: isSelected ? AppTheme.textPrimary : AppTheme.textLight,
-            fontWeight: FontWeight.w600,
-            fontSize: 14,
           ),
-        ),
-      ),
-    );
-  }
+          const SizedBox(height: 12),
 
-  Widget _buildSimulatorButton(BuildContext context) {
-    return InkWell(
-      onTap: () => Navigator.pushNamed(context, '/simulator'),
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: AppTheme.cardBg,
-          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-          boxShadow: AppTheme.shadowSm,
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppTheme.primary.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.speed_rounded, color: AppTheme.primary),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Payoff Simulator',
-                    style: TextStyle(
-                      color: AppTheme.textPrimary,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                  Text(
-                    'Calculate savings with extra payments',
-                    style: TextStyle(
-                      color: AppTheme.textSecondary,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(
-              Icons.arrow_forward_ios_rounded,
-              color: AppTheme.textLight,
-              size: 16,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLegendItem(String label, Color color) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 10,
-          height: 10,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          label,
-          style: TextStyle(
-            fontWeight: FontWeight.w500,
-            color: AppTheme.textSecondary,
-            fontSize: 13,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDebtFreeEstimator(SettingsProvider settings) {
-    // Determine max payoff date
-    DateTime maxDate = DateTime.now();
-    for (var loan in _loans) {
-      final schedule = loan.getAmortizationSchedule();
-      if (schedule.isNotEmpty) {
-        if (schedule.last.date.isAfter(maxDate)) {
-          maxDate = schedule.last.date;
-        }
-      }
-    }
-
-    // Calculate duration
-    final diff = maxDate.difference(DateTime.now());
-    final years = (diff.inDays / 365).toStringAsFixed(1);
-
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppTheme.cardBg,
-        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-        boxShadow: AppTheme.shadowSm,
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.date_range_rounded, color: AppTheme.primary, size: 32),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          // Payoff Simulator
+          GlassCard(
+            variant: GlassCardVariant.accent,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const PayoffSimulatorScreen()),
+              );
+            },
+            child: Row(
               children: [
-                Text(
-                  'Debt Free Date',
-                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
-                ),
-                Text(
-                  '${maxDate.year}',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.textPrimary,
+                const Icon(Icons.speed_rounded, color: Colors.white, size: 28),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Payoff Simulator',
+                          style: TextStyle(
+                              color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
+                      Text('See how extra payments save you money',
+                          style: TextStyle(color: Colors.white70, fontSize: 13)),
+                    ],
                   ),
                 ),
-                Text(
-                  'in approx $years years',
-                  style: TextStyle(color: AppTheme.textLight, fontSize: 12),
-                ),
+                const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white70, size: 16),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryCard(double totalDebt, double totalPaid, String symbol) {
+    return GlassCard(
+      variant: GlassCardVariant.accent,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('TOTAL REMAINING',
+              style: TextStyle(color: Colors.white60, fontSize: 12,
+                  fontWeight: FontWeight.w600, letterSpacing: 1.1)),
+          const SizedBox(height: 8),
+          TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0, end: totalDebt),
+            duration: AppTheme.animSlow,
+            curve: AppTheme.curveDefault,
+            builder: (_, v, __) => Text(
+              formatCurrency(v, symbol: symbol),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 34,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.5,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(AppTheme.radiusFull),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.trending_up_rounded, color: Colors.white, size: 14),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Paid: ${formatCurrency(totalPaid, symbol: symbol)}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatCards(double principal, double interest, int count, String symbol) {
+    return Row(
+      children: [
+        Expanded(child: _buildMiniStat('Principal', formatCurrency(principal, symbol: symbol),
+            Icons.account_balance_rounded, AppTheme.primary)),
+        const SizedBox(width: 10),
+        Expanded(child: _buildMiniStat('Interest', formatCurrency(interest, symbol: symbol),
+            Icons.percent_rounded, AppTheme.warning)),
+        const SizedBox(width: 10),
+        Expanded(child: _buildMiniStat('Active', count.toString(),
+            Icons.receipt_long_rounded, AppTheme.accent)),
+      ],
+    );
+  }
+
+  Widget _buildMiniStat(String label, String value, IconData icon, Color color) {
+    return GlassCard(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [color.withValues(alpha: 0.2), color.withValues(alpha: 0.05)],
+              ),
+              borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            ),
+            child: Icon(icon, color: color, size: 16),
+          ),
+          const SizedBox(height: 10),
+          Text(value, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700,
+              color: AppTheme.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis),
+          Text(label, style: TextStyle(fontSize: 11, color: AppTheme.textLight)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDonutChart(double principal, double interest, String symbol) {
+    final total = principal + interest;
+    return GlassCard(
+      child: Column(
+        children: [
+          SizedBox(
+            height: 200,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                PieChart(
+                  PieChartData(
+                    sectionsSpace: 4,
+                    centerSpaceRadius: 55,
+                    startDegreeOffset: -90,
+                    sections: [
+                      PieChartSectionData(
+                        color: AppTheme.primary,
+                        value: principal,
+                        title: '${(principal / total * 100).toStringAsFixed(0)}%',
+                        radius: 45,
+                        titleStyle: const TextStyle(
+                            color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                      PieChartSectionData(
+                        color: AppTheme.warning,
+                        value: interest,
+                        title: '${(interest / total * 100).toStringAsFixed(0)}%',
+                        radius: 38,
+                        titleStyle: const TextStyle(
+                            color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                // Center label
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Total', style: TextStyle(fontSize: 12, color: AppTheme.textLight)),
+                    Text(formatCurrency(total, symbol: symbol),
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800,
+                            color: AppTheme.textPrimary)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildLegend('Principal', AppTheme.primary),
+              const SizedBox(width: 24),
+              _buildLegend('Interest', AppTheme.warning),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLegend(String label, Color color) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(width: 10, height: 10,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+        const SizedBox(width: 6),
+        Text(label, style: TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
+      ],
+    );
+  }
+
+  Widget _buildLoanBar(Loan loan, double totalDebt, String symbol) {
+    final fraction = totalDebt > 0 ? loan.totalRemaining / totalDebt : 0.0;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: GlassCard(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(loan.name, style: TextStyle(fontWeight: FontWeight.w600,
+                    fontSize: 14, color: AppTheme.textPrimary)),
+                const Spacer(),
+                Text(formatCurrency(loan.totalRemaining, symbol: symbol),
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14,
+                        color: AppTheme.textPrimary)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(AppTheme.radiusFull),
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0, end: fraction),
+                duration: AppTheme.animSlow,
+                curve: AppTheme.curveDefault,
+                builder: (_, v, __) => LinearProgressIndicator(
+                  value: v,
+                  minHeight: 6,
+                  backgroundColor: AppTheme.surfaceLight,
+                  valueColor: AlwaysStoppedAnimation(AppTheme.primary),
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text('${(fraction * 100).toStringAsFixed(0)}% of total debt',
+                style: TextStyle(fontSize: 11, color: AppTheme.textLight)),
+          ],
+        ),
       ),
     );
   }

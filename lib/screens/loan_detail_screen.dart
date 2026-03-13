@@ -1,23 +1,24 @@
+import 'dart:math';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:confetti/confetti.dart';
+import 'package:provider/provider.dart';
 import '../core/theme/app_theme.dart';
 import '../core/widgets/app_scaffold.dart';
-import '../core/widgets/animated_button.dart';
 import '../core/widgets/animated_card.dart';
+import '../core/widgets/animated_button.dart';
+import '../core/constants/loan_icons.dart';
+import '../core/utils/currency_formatter.dart';
 import '../models/loan.dart';
 import '../models/payment.dart';
 import '../services/storage_service.dart';
-import '../core/constants/loan_icons.dart';
 import '../services/pdf_service.dart';
-import 'amortization_screen.dart'; // Add import
-import '../core/utils/currency_formatter.dart';
-import 'package:provider/provider.dart';
 import '../providers/settings_provider.dart';
+import 'amortization_screen.dart';
 
-/// Screen showing loan details with payment recording
 class LoanDetailScreen extends StatefulWidget {
   final String loanId;
-
   const LoanDetailScreen({super.key, required this.loanId});
 
   @override
@@ -34,26 +35,17 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
   bool _isSaving = false;
   bool _showPaymentSuccess = false;
   double _lastPaymentAmount = 0;
-  double _previousRemainingDebt = 0;
-  double _previousProgress = 0;
 
   late AnimationController _headerController;
   late Animation<double> _headerFade;
-  late Animation<double> _headerSlide;
+  late ConfettiController _confettiController;
 
   @override
   void initState() {
     super.initState();
-    _headerController = AnimationController(
-      vsync: this,
-      duration: AppTheme.animSlow,
-    );
-    _headerFade = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _headerController, curve: AppTheme.curveDefault),
-    );
-    _headerSlide = Tween<double>(begin: 30, end: 0).animate(
-      CurvedAnimation(parent: _headerController, curve: AppTheme.curveDefault),
-    );
+    _headerController = AnimationController(vsync: this, duration: AppTheme.animSlow);
+    _headerFade = CurvedAnimation(parent: _headerController, curve: AppTheme.curveDefault);
+    _confettiController = ConfettiController(duration: const Duration(seconds: 3));
     _loadLoan();
   }
 
@@ -61,48 +53,36 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
   void dispose() {
     _headerController.dispose();
     _paymentController.dispose();
+    _confettiController.dispose();
     super.dispose();
   }
 
   Future<void> _loadLoan() async {
     if (!mounted) return;
-    final previousLoan = _loan;
     setState(() => _isLoading = true);
     final loan = await _storage.getLoan(widget.loanId);
     if (!mounted) return;
     setState(() {
-      _previousRemainingDebt = previousLoan?.totalRemaining ?? 0;
-      _previousProgress = (previousLoan?.progress ?? 0).clamp(0.0, 1.0);
       _loan = loan;
       _isLoading = false;
     });
     _headerController.forward(from: 0);
+    if (loan?.isPaidOff == true) _confettiController.play();
   }
 
   Future<void> _recordPayment() async {
     final amount = double.tryParse(_paymentController.text.replaceAll(' ', ''));
     if (amount == null || amount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter a valid amount'),
-          backgroundColor: AppTheme.error,
-        ),
+        const SnackBar(content: Text('Please enter a valid amount'), backgroundColor: AppTheme.error),
       );
       return;
     }
-
     setState(() => _isSaving = true);
-
-    final previousLoan = _loan;
     final payment = Payment.create(amount: amount);
     final updatedLoan = await _storage.addPayment(widget.loanId, payment);
-
     if (updatedLoan != null) {
       setState(() {
-        _previousRemainingDebt =
-            previousLoan?.remainingDebt ?? updatedLoan.remainingDebt;
-        _previousProgress = (previousLoan?.progress ?? updatedLoan.progress)
-            .clamp(0.0, 1.0);
         _loan = updatedLoan;
         _isSaving = false;
         _showPaymentSuccess = true;
@@ -110,12 +90,9 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
       });
       _paymentController.clear();
       HapticFeedback.mediumImpact();
-
-      // Hide success message after 3 seconds
+      if (updatedLoan.isPaidOff) _confettiController.play();
       Future.delayed(const Duration(seconds: 3), () {
-        if (mounted) {
-          setState(() => _showPaymentSuccess = false);
-        }
+        if (mounted) setState(() => _showPaymentSuccess = false);
       });
     } else {
       setState(() => _isSaving = false);
@@ -125,44 +102,52 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
   Future<void> _deleteLoan() async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-        ),
-        title: Text('Delete Loan'),
-        content: Text(
-          'Are you sure you want to delete this loan? This action cannot be undone.',
-        ),
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusLg)),
+        title: const Text('Delete Loan'),
+        content: const Text('Are you sure? This action cannot be undone.'),
         actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
           TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
+            onPressed: () => Navigator.pop(context, true),
             style: TextButton.styleFrom(foregroundColor: AppTheme.error),
-            child: Text('Delete'),
+            child: const Text('Delete'),
           ),
         ],
       ),
     );
-
     if (confirm == true) {
       await _storage.deleteLoan(widget.loanId);
-      if (mounted) {
-        Navigator.of(context).pop(true);
-      }
+      if (mounted) Navigator.pop(context, true);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _loan == null
-          ? _buildNotFound()
-          : _buildContent(),
+      body: Stack(
+        children: [
+          _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _loan == null
+                  ? _buildNotFound()
+                  : _buildContent(),
+          // Confetti
+          Align(
+            alignment: Alignment.topCenter,
+            child: ConfettiWidget(
+              confettiController: _confettiController,
+              blastDirectionality: BlastDirectionality.explosive,
+              numberOfParticles: 25,
+              maxBlastForce: 15,
+              minBlastForce: 5,
+              gravity: 0.2,
+              colors: const [AppTheme.primary, AppTheme.accent, AppTheme.success,
+                Color(0xFFFBBF24), Color(0xFFF43F5E)],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -171,21 +156,11 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.error_outline_rounded,
-            size: 64,
-            color: AppTheme.textLight,
-          ),
+          Icon(Icons.error_outline_rounded, size: 64, color: AppTheme.textLight),
           const SizedBox(height: 16),
-          Text(
-            'Loan not found',
-            style: TextStyle(fontSize: 18, color: AppTheme.textSecondary),
-          ),
+          Text('Loan not found', style: TextStyle(fontSize: 18, color: AppTheme.textSecondary)),
           const SizedBox(height: 24),
-          AnimatedButton(
-            label: 'Go Back',
-            onPressed: () => Navigator.of(context).pop(),
-          ),
+          AnimatedButton(label: 'Go Back', onPressed: () => Navigator.pop(context)),
         ],
       ),
     );
@@ -193,23 +168,26 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
 
   Widget _buildContent() {
     final loan = _loan!;
+    final settings = Provider.of<SettingsProvider>(context, listen: false);
     return Column(
       children: [
-        _buildHeader(loan),
+        _buildHeader(loan, settings),
         Expanded(
           child: ListView(
             padding: const EdgeInsets.all(20),
             children: [
-              if (_showPaymentSuccess) _buildSuccessMessage(),
-              _buildPaymentInput(loan),
-              const SizedBox(height: 20),
-              _buildLoanInfo(loan),
-              const SizedBox(height: 20),
-              _buildQuickStats(loan),
-              const SizedBox(height: 20),
-              _buildPaymentHistory(loan),
-              const SizedBox(height: 20),
+              if (_showPaymentSuccess) _buildSuccessMessage(loan, settings),
+              if (!loan.isPaidOff) _buildPaymentInput(loan, settings),
+              if (loan.isPaidOff) _buildCelebration(),
+              const SizedBox(height: 16),
+              _buildLoanInfo(loan, settings),
+              const SizedBox(height: 16),
+              _buildQuickStats(loan, settings),
+              const SizedBox(height: 16),
+              _buildPaymentTimeline(loan, settings),
+              const SizedBox(height: 16),
               _buildDeleteButton(),
+              const SizedBox(height: 80),
             ],
           ),
         ),
@@ -217,25 +195,12 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
     );
   }
 
-  Widget _buildHeader(Loan loan) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final actionBg = isDark
-        ? Colors.white.withValues(alpha: 0.16)
-        : Colors.black.withValues(alpha: 0.12);
-    final actionBorder = Colors.white.withValues(alpha: isDark ? 0.28 : 0.22);
-    final progressEnd = loan.progress.clamp(0.0, 1.0);
-    final progressStart = _previousProgress.clamp(0.0, 1.0);
-    final remainingStart = _previousRemainingDebt;
-    final remainingEnd = loan.totalRemaining;
+  Widget _buildHeader(Loan loan, SettingsProvider settings) {
+    final progress = loan.progress.clamp(0.0, 1.0);
+    final gradient = kLoanIconGradient(loan.iconId);
 
-    return AnimatedBuilder(
-      animation: _headerController,
-      builder: (context, child) {
-        return Transform.translate(
-          offset: Offset(0, _headerSlide.value),
-          child: Opacity(opacity: _headerFade.value, child: child),
-        );
-      },
+    return FadeTransition(
+      opacity: _headerFade,
       child: Container(
         margin: const EdgeInsets.all(16),
         padding: const EdgeInsets.all(20),
@@ -245,212 +210,190 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
               : LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [
-                    Color(0xFF3b82f6), // Tailwind blue-500
-                    Color(0xFF6366f1), // Tailwind indigo-500
-                  ],
+                  colors: [gradient.start, gradient.end],
                 ),
           borderRadius: BorderRadius.circular(AppTheme.radiusLg),
           boxShadow: [
             BoxShadow(
-              color: AppTheme.primary.withValues(alpha: 0.3),
+              color: (loan.isPaidOff ? AppTheme.success : gradient.start)
+                  .withValues(alpha: 0.3),
               blurRadius: 20,
-              spreadRadius: 2,
-              offset: const Offset(0, 4),
+              offset: const Offset(0, 6),
             ),
           ],
         ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Top row
             Row(
               children: [
                 GestureDetector(
-                  onTap: () => Navigator.of(context).pop(true),
+                  onTap: () => Navigator.pop(context, true),
                   child: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: actionBg,
-                      border: Border.all(color: actionBorder),
+                      color: Colors.white.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(AppTheme.radiusMd),
                     ),
-                    child: Icon(
-                      Icons.arrow_back_rounded,
-                      color: Colors.white,
-                      size: 20,
-                    ),
+                    child: const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 20),
                   ),
                 ),
                 const SizedBox(width: 12),
-                Hero(
-                  tag: 'loan-icon-${loan.id}',
-                  child: Material(
-                    color: Colors.transparent,
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: actionBg,
-                        border: Border.all(color: actionBorder),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        kLoanIcons[loan.iconId] ?? Icons.credit_card_rounded,
-                        color: Colors.white,
-                        size: 18,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Hero(
-                    tag: 'loan-title-${loan.id}',
-                    child: Material(
-                      color: Colors.transparent,
-                      child: Text(
-                        loan.name,
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                // Buttons moved to top right
-                Container(
-                  decoration: BoxDecoration(
-                    color: actionBg,
-                    border: Border.all(color: actionBorder),
-                    borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: Icon(
-                          Icons.table_chart_rounded,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                        tooltip: 'Amortization',
-                        padding: EdgeInsets.all(8),
-                        constraints: BoxConstraints(),
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => AmortizationScreen(loan: loan),
-                            ),
-                          );
-                        },
-                      ),
-                      Container(width: 1, height: 20, color: Colors.white24),
-                      IconButton(
-                        icon: Icon(
-                          Icons.picture_as_pdf_rounded,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                        tooltip: 'Export PDF',
-                        padding: EdgeInsets.all(8),
-                        constraints: BoxConstraints(),
-                        onPressed: () {
-                          final settings = Provider.of<SettingsProvider>(
-                            context,
-                            listen: false,
-                          );
-                          PdfService.generateLoanReport(
-                            loan,
-                            settings.currencySymbol,
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'REMAINING DEBT',
-              style: TextStyle(
-                color: Colors.white70,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 1.2,
-              ),
-            ),
-            const SizedBox(height: 8),
-            TweenAnimationBuilder<double>(
-              tween: Tween<double>(begin: remainingStart, end: remainingEnd),
-              duration: AppTheme.animSlow,
-              curve: AppTheme.curveDefault,
-              builder: (context, value, child) {
-                return Text(
-                  formatCurrency(value),
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 40,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -1,
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 20),
-            Hero(
-              tag: 'loan-progress-${loan.id}',
-              child: Material(
-                color: Colors.transparent,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(AppTheme.radiusFull),
-                  child: TweenAnimationBuilder<double>(
-                    tween: Tween<double>(
-                      begin: progressStart,
-                      end: progressEnd,
-                    ),
-                    duration: AppTheme.animSlow,
-                    curve: AppTheme.curveDefault,
-                    builder: (context, value, child) {
-                      return LinearProgressIndicator(
-                        value: value,
-                        minHeight: 10,
-                        backgroundColor: Colors.white.withValues(alpha: 0.2),
-                        valueColor: const AlwaysStoppedAnimation<Color>(
-                          Colors.white,
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  '${(progressEnd * 100).toStringAsFixed(0)}% complete',
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
                 Expanded(
                   child: Text(
-                    'Day ${loan.paymentDay} - ${loan.daysUntilPayment} days left',
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
+                    loan.name,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
                     ),
-                    textAlign: TextAlign.end,
                   ),
                 ),
+                _buildHeaderActions(loan, settings),
               ],
+            ),
+            const SizedBox(height: 20),
+            // Progress Ring
+            _buildProgressRing(loan, progress, settings),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeaderActions(Loan loan, SettingsProvider settings) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildHeaderButton(
+          icon: Icons.table_chart_rounded,
+          tooltip: 'Amortization',
+          onTap: () {
+            Navigator.push(context,
+                MaterialPageRoute(builder: (_) => AmortizationScreen(loan: loan)));
+          },
+        ),
+        const SizedBox(width: 8),
+        _buildHeaderButton(
+          icon: Icons.picture_as_pdf_rounded,
+          tooltip: 'Export PDF',
+          onTap: () => PdfService.generateLoanReport(loan, settings.currencySymbol),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHeaderButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        onTap();
+      },
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+          border: Border.all(
+            color: Colors.white.withOpacity(0.1),
+            width: 1,
+          ),
+        ),
+        child: Icon(icon, color: Colors.white, size: 20),
+      ),
+    );
+  }
+
+  Widget _buildProgressRing(Loan loan, double progress, SettingsProvider settings) {
+    return SizedBox(
+      width: 140,
+      height: 140,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0, end: progress),
+        duration: const Duration(milliseconds: 1200),
+        curve: AppTheme.curveDefault,
+        builder: (context, value, _) {
+          return Stack(
+            alignment: Alignment.center,
+            children: [
+              CustomPaint(
+                size: const Size(140, 140),
+                painter: _ProgressRingPainter(
+                  progress: value,
+                  strokeWidth: 10,
+                  bgColor: Colors.white.withValues(alpha: 0.2),
+                  fgColor: Colors.white,
+                ),
+              ),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '${(value * 100).toStringAsFixed(0)}%',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 28,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  Text(
+                    formatCurrency(loan.totalRemaining, symbol: settings.currencySymbol),
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.8),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    'remaining',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.6),
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildSuccessMessage(Loan loan, SettingsProvider settings) {
+    final isExtra = _lastPaymentAmount > loan.monthlyRequired;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: AnimatedCard(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppTheme.successLight,
+                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+              ),
+              child: const Icon(Icons.check_circle_rounded, color: AppTheme.success),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Payment Recorded!',
+                      style: TextStyle(fontWeight: FontWeight.w700, color: AppTheme.success)),
+                  if (isExtra)
+                    Text(
+                      'You paid ${formatCurrency(_lastPaymentAmount - loan.monthlyRequired, symbol: settings.currencySymbol)} extra!',
+                      style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+                    ),
+                ],
+              ),
             ),
           ],
         ),
@@ -458,240 +401,119 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
     );
   }
 
-  Widget _buildSuccessMessage() {
-    final loan = _loan!;
-    final isExtra = _lastPaymentAmount > loan.monthlyRequired;
-
+  Widget _buildCelebration() {
     return AnimatedCard(
-      padding: const EdgeInsets.all(16),
-      child: Row(
+      padding: const EdgeInsets.all(24),
+      child: Column(
         children: [
           Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: AppTheme.successLight,
-              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-            ),
-            child: Icon(Icons.check_circle_rounded, color: AppTheme.success),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(color: AppTheme.successLight, shape: BoxShape.circle),
+            child: const Icon(Icons.celebration_rounded, size: 48, color: AppTheme.success),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Payment Recorded!',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.success,
-                  ),
-                ),
-                if (isExtra)
-                  Text(
-                    'You paid ${formatCurrency(_lastPaymentAmount - loan.monthlyRequired)} extra! Great job!',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: AppTheme.textSecondary,
-                    ),
-                  ),
-              ],
-            ),
-          ),
+          const SizedBox(height: 16),
+          Text('🎉 Congratulations!',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: AppTheme.success)),
+          const SizedBox(height: 8),
+          Text('You have fully paid off this loan!',
+              style: TextStyle(fontSize: 16, color: AppTheme.textSecondary)),
         ],
       ),
     );
   }
 
-  Widget _buildPaymentInput(Loan loan) {
-    if (loan.isPaidOff) {
-      return AnimatedCard(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppTheme.successLight,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.celebration_rounded,
-                size: 48,
-                color: AppTheme.success,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Congratulations!',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.w700,
-                color: AppTheme.success,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'You have fully paid off this loan!',
-              style: TextStyle(fontSize: 16, color: AppTheme.textSecondary),
-            ),
-          ],
-        ),
-      );
-    }
-
+  Widget _buildPaymentInput(Loan loan, SettingsProvider settings) {
     return AnimatedCard(
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppTheme.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                ),
-                child: Icon(
-                  Icons.payments_rounded,
-                  color: AppTheme.primary,
-                  size: 20,
-                ),
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(colors: [
+                  AppTheme.primary.withValues(alpha: 0.15),
+                  AppTheme.primary.withValues(alpha: 0.05),
+                ]),
+                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
               ),
-              const SizedBox(width: 12),
-              Text(
-                'Record Payment',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-              ),
-            ],
-          ),
+              child: const Icon(Icons.payments_rounded, color: AppTheme.primary, size: 20),
+            ),
+            const SizedBox(width: 12),
+            const Text('Record Payment',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+          ]),
           const SizedBox(height: 16),
           TextFormField(
             controller: _paymentController,
             keyboardType: TextInputType.number,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
+            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
             decoration: InputDecoration(
               hintText: loan.monthlyRequired.toStringAsFixed(0),
-              hintStyle: TextStyle(
-                color: AppTheme.textLight.withValues(alpha: 0.5),
-              ),
-              suffixText: '₼',
-              suffixStyle: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.textSecondary,
-              ),
+              hintStyle: TextStyle(color: AppTheme.textLight.withValues(alpha: 0.5)),
+              suffixText: settings.currencySymbol,
+              suffixStyle: TextStyle(fontSize: 20, fontWeight: FontWeight.w600,
+                  color: AppTheme.textSecondary),
             ),
           ),
           const SizedBox(height: 8),
-          Text(
-            'Monthly required: ${formatCurrency(loan.monthlyRequired)}',
-            style: TextStyle(fontSize: 13, color: AppTheme.textLight),
-          ),
+          Text('Monthly: ${formatCurrency(loan.monthlyRequired, symbol: settings.currencySymbol)}',
+              style: TextStyle(fontSize: 13, color: AppTheme.textLight)),
           const SizedBox(height: 16),
-          AnimatedButton(
-            label: 'Record Payment',
-            icon: Icons.check_rounded,
-            isLoading: _isSaving,
-            onPressed: _recordPayment,
-          ),
+          AnimatedButton(label: 'Record Payment', icon: Icons.check_rounded,
+              isLoading: _isSaving, onPressed: _recordPayment),
         ],
       ),
     );
   }
 
-  Widget _buildLoanInfo(Loan loan) {
-    final settings = Provider.of<SettingsProvider>(context, listen: false);
+  Widget _buildLoanInfo(Loan loan, SettingsProvider settings) {
     return AnimatedCard(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Loan Terms',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: AppTheme.textPrimary,
-            ),
-          ),
+          Text('Loan Terms', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600,
+              color: AppTheme.textPrimary)),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _buildInfoItem(
-                  'Interest Rate',
-                  '${loan.interestRate.toStringAsFixed(1)}%',
-                ),
-              ),
-              Expanded(
-                child: _buildInfoItem('Term', '${loan.termMonths} Months'),
-              ),
-              Expanded(
-                child: _buildInfoItem(
-                  'Monthly',
-                  formatCurrency(
-                    loan.monthlyRequired,
-                    symbol: settings.currencySymbol,
-                  ),
-                ),
-              ),
-            ],
-          ),
+          Row(children: [
+            Expanded(child: _infoItem('Interest Rate', '${loan.interestRate.toStringAsFixed(1)}%')),
+            Expanded(child: _infoItem('Term', '${loan.termMonths} Months')),
+            Expanded(child: _infoItem('Monthly',
+                formatCurrency(loan.monthlyRequired, symbol: settings.currencySymbol))),
+          ]),
         ],
       ),
     );
   }
 
-  Widget _buildInfoItem(String label, String value) {
+  Widget _infoItem(String label, String value) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label, style: TextStyle(fontSize: 12, color: AppTheme.textLight)),
         const SizedBox(height: 4),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: AppTheme.textPrimary,
-          ),
-        ),
+        Text(value, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700,
+            color: AppTheme.textPrimary)),
       ],
     );
   }
 
-  Widget _buildQuickStats(Loan loan) {
+  Widget _buildQuickStats(Loan loan, SettingsProvider settings) {
     return Row(
       children: [
-        Expanded(
-          child: _buildStatCard(
-            icon: Icons.payments_outlined,
-            label: 'Total Paid',
-            value: formatCurrency(loan.totalPaid),
-            color: AppTheme.success,
-          ),
-        ),
+        Expanded(child: _statCard(Icons.payments_outlined, 'Total Paid',
+            formatCurrency(loan.totalPaid, symbol: settings.currencySymbol), AppTheme.success)),
         const SizedBox(width: 12),
-        Expanded(
-          child: _buildStatCard(
-            icon: Icons.receipt_long_outlined,
-            label: 'Payments',
-            value: loan.paymentCount.toString(),
-            color: AppTheme.primary,
-          ),
-        ),
+        Expanded(child: _statCard(Icons.receipt_long_outlined, 'Payments',
+            loan.paymentCount.toString(), AppTheme.primary)),
       ],
     );
   }
 
-  Widget _buildStatCard({
-    required IconData icon,
-    required String label,
-    required String value,
-    required Color color,
-  }) {
+  Widget _statCard(IconData icon, String label, String value, Color color) {
     return AnimatedCard(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -700,27 +522,24 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.1),
+              gradient: LinearGradient(
+                colors: [color.withValues(alpha: 0.15), color.withValues(alpha: 0.05)],
+              ),
               borderRadius: BorderRadius.circular(AppTheme.radiusSm),
             ),
             child: Icon(icon, color: color, size: 20),
           ),
           const SizedBox(height: 12),
-          Text(
-            label,
-            style: TextStyle(fontSize: 12, color: AppTheme.textLight),
-          ),
+          Text(label, style: TextStyle(fontSize: 12, color: AppTheme.textLight)),
           const SizedBox(height: 4),
-          Text(
-            value,
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-          ),
+          Text(value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
         ],
       ),
     );
   }
 
-  Widget _buildPaymentHistory(Loan loan) {
+  // Payment Timeline
+  Widget _buildPaymentTimeline(Loan loan, SettingsProvider settings) {
     if (loan.payments.isEmpty) {
       return AnimatedCard(
         padding: const EdgeInsets.all(24),
@@ -728,16 +547,12 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
           child: Column(
             children: [
               Icon(Icons.history_rounded, size: 48, color: AppTheme.textLight),
-              SizedBox(height: 12),
-              Text(
-                'No payments yet',
-                style: TextStyle(fontSize: 16, color: AppTheme.textSecondary),
-              ),
-              SizedBox(height: 4),
-              Text(
-                'Your payment history will appear here',
-                style: TextStyle(fontSize: 13, color: AppTheme.textLight),
-              ),
+              const SizedBox(height: 12),
+              Text('No payments yet',
+                  style: TextStyle(fontSize: 16, color: AppTheme.textSecondary)),
+              const SizedBox(height: 4),
+              Text('Your payment history will appear here',
+                  style: TextStyle(fontSize: 13, color: AppTheme.textLight)),
             ],
           ),
         ),
@@ -745,100 +560,105 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
     }
 
     final payments = loan.payments.reversed.toList();
-
     return AnimatedCard(
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppTheme.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                ),
-                child: Icon(
-                  Icons.history_rounded,
-                  color: AppTheme.primary,
-                  size: 20,
-                ),
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(colors: [
+                  AppTheme.primary.withValues(alpha: 0.15),
+                  AppTheme.primary.withValues(alpha: 0.05),
+                ]),
+                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
               ),
-              const SizedBox(width: 12),
-              Text(
-                'Payment History',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-              ),
-            ],
-          ),
+              child: const Icon(Icons.history_rounded, color: AppTheme.primary, size: 20),
+            ),
+            const SizedBox(width: 12),
+            const Text('Payment History',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+          ]),
           const SizedBox(height: 16),
           ...payments.asMap().entries.map((entry) {
+            final i = entry.key;
             final payment = entry.value;
             final isExtra = payment.amount > loan.monthlyRequired;
+            final isLast = i == payments.length - 1;
 
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 12),
+            return IntrinsicHeight(
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: isExtra
-                          ? AppTheme.successLight
-                          : AppTheme.surfaceLight,
-                      borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                    ),
-                    child: Icon(
-                      isExtra ? Icons.trending_up_rounded : Icons.check_rounded,
-                      color: isExtra ? AppTheme.success : AppTheme.textLight,
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
+                  // Timeline column
+                  SizedBox(
+                    width: 24,
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          formatCurrency(payment.amount),
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
+                        Container(
+                          width: 12,
+                          height: 12,
+                          decoration: BoxDecoration(
+                            color: isExtra ? AppTheme.success : AppTheme.primary,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: (isExtra ? AppTheme.success : AppTheme.primary)
+                                  .withValues(alpha: 0.3),
+                              width: 3,
+                            ),
                           ),
                         ),
-                        Text(
-                          _formatDate(payment.date),
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: AppTheme.textLight,
+                        if (!isLast)
+                          Expanded(
+                            child: Container(
+                              width: 2,
+                              color: AppTheme.divider,
+                            ),
                           ),
-                        ),
                       ],
                     ),
                   ),
-                  if (isExtra)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppTheme.successLight,
-                        borderRadius: BorderRadius.circular(
-                          AppTheme.radiusFull,
-                        ),
-                      ),
-                      child: Text(
-                        '+${formatCurrency(payment.amount - loan.monthlyRequired)}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.success,
-                        ),
+                  const SizedBox(width: 12),
+                  // Content
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  formatCurrency(payment.amount, symbol: settings.currencySymbol),
+                                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                                ),
+                                Text(
+                                  _formatDate(payment.date),
+                                  style: TextStyle(fontSize: 12, color: AppTheme.textLight),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (isExtra)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: AppTheme.successLight,
+                                borderRadius: BorderRadius.circular(AppTheme.radiusFull),
+                              ),
+                              child: Text(
+                                '+${formatCurrency(payment.amount - loan.monthlyRequired, symbol: settings.currencySymbol)}',
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
+                                    color: AppTheme.success),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
+                  ),
                 ],
               ),
             );
@@ -849,20 +669,7 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
   }
 
   String _formatDate(DateTime date) {
-    final months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     return '${months[date.month - 1]} ${date.day}, ${date.year}';
   }
 
@@ -870,10 +677,65 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
     return Center(
       child: TextButton.icon(
         onPressed: _deleteLoan,
-        icon: Icon(Icons.delete_outline_rounded),
-        label: Text('Delete Loan'),
+        icon: const Icon(Icons.delete_outline_rounded),
+        label: const Text('Delete Loan'),
         style: TextButton.styleFrom(foregroundColor: AppTheme.error),
       ),
     );
   }
+}
+
+/// Custom painter for circular progress ring with gradient
+class _ProgressRingPainter extends CustomPainter {
+  final double progress;
+  final double strokeWidth;
+  final Color bgColor;
+  final Color fgColor;
+
+  _ProgressRingPainter({
+    required this.progress,
+    required this.strokeWidth,
+    required this.bgColor,
+    required this.fgColor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = (size.width - strokeWidth) / 2;
+    final rect = Rect.fromCircle(center: center, radius: radius);
+
+    // Background arc
+    final bgPaint = Paint()
+      ..color = bgColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round;
+    canvas.drawCircle(center, radius, bgPaint);
+
+    // Foreground arc
+    if (progress > 0) {
+      final fgPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth
+        ..strokeCap = StrokeCap.round
+        ..shader = SweepGradient(
+          startAngle: -pi / 2,
+          endAngle: 3 * pi / 2,
+          colors: [fgColor.withValues(alpha: 0.6), fgColor],
+        ).createShader(rect);
+
+      canvas.drawArc(
+        rect,
+        -pi / 2,
+        2 * pi * progress,
+        false,
+        fgPaint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ProgressRingPainter old) =>
+      old.progress != progress;
 }
