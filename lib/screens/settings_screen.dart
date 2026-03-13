@@ -267,7 +267,7 @@ class SettingsScreen extends StatelessWidget {
             style: TextStyle(fontSize: 12, color: AppTheme.textLight)),
         trailing: Switch.adaptive(
           value: settings.biometricEnabled,
-          activeColor: AppTheme.primary,
+          activeTrackColor: AppTheme.primary,
           onChanged: (value) async {
             HapticFeedback.selectionClick();
             if (value) {
@@ -343,7 +343,7 @@ class SettingsScreen extends StatelessWidget {
           Text(
             'Made by Fibontech',
             style: TextStyle(
-              color: AppTheme.textLight.withOpacity(0.6),
+              color: AppTheme.textLight.withValues(alpha: 0.6),
               fontSize: 12,
             ),
           ),

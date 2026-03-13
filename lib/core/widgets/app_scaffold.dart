@@ -57,12 +57,12 @@ class AppScaffold extends StatelessWidget {
         Positioned(
           top: -100,
           right: -50,
-          child: _Blob(color: AppTheme.primary.withOpacity(0.12), size: 300),
+          child: _Blob(color: AppTheme.primary.withValues(alpha: 0.12), size: 300),
         ),
         Positioned(
           bottom: 100,
           left: -80,
-          child: _Blob(color: AppTheme.accent.withOpacity(0.08), size: 250),
+          child: _Blob(color: AppTheme.accent.withValues(alpha: 0.08), size: 250),
         ),
         Positioned.fill(
           child: BackdropFilter(

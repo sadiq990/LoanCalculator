@@ -62,12 +62,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           Positioned(
             top: -100,
             right: -50,
-            child: _BlurCircle(color: _pages[_currentPage].color.withOpacity(0.12), size: 300),
+            child: _BlurCircle(color: _pages[_currentPage].color.withValues(alpha: 0.12), size: 300),
           ),
           Positioned(
             bottom: -50,
             left: -50,
-            child: _BlurCircle(color: AppTheme.primary.withOpacity(0.08), size: 250),
+            child: _BlurCircle(color: AppTheme.primary.withValues(alpha: 0.08), size: 250),
           ),
 
           SafeArea(
@@ -81,7 +81,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: AppTheme.primary.withOpacity(0.1),
+                        color: AppTheme.primary.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: const Icon(Icons.account_balance_rounded, color: AppTheme.primary, size: 24),
@@ -184,7 +184,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                             borderRadius: BorderRadius.circular(16),
                             boxShadow: [
                               BoxShadow(
-                                color: AppTheme.primary.withOpacity(0.3),
+                                color: AppTheme.primary.withValues(alpha: 0.3),
                                 blurRadius: 15,
                                 offset: const Offset(0, 5),
                               )
@@ -234,7 +234,7 @@ class _BlurCircle extends StatelessWidget {
       width: size,
       height: size,
       decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-      child: BackdropFilter(filter: ColorFilter.mode(Colors.white.withOpacity(0.1), BlendMode.softLight)),
+      child: BackdropFilter(filter: ColorFilter.mode(Colors.white.withValues(alpha: 0.1), BlendMode.softLight)),
     );
   }
 }
@@ -278,7 +278,7 @@ class _AnimatedPulseIconState extends State<_AnimatedPulseIcon> with SingleTicke
             width: 140,
             height: 140,
             decoration: BoxDecoration(
-              color: widget.color.withOpacity(_opacity.value),
+              color: widget.color.withValues(alpha: _opacity.value),
               shape: BoxShape.circle,
             ),
             child: Transform.scale(scale: _scale.value, child: child),
@@ -286,18 +286,18 @@ class _AnimatedPulseIconState extends State<_AnimatedPulseIcon> with SingleTicke
           child: Container(
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: widget.color.withOpacity(0.2), width: 2),
+              border: Border.all(color: widget.color.withValues(alpha: 0.2), width: 2),
             ),
           ),
         ),
         Container(
           padding: const EdgeInsets.all(32),
           decoration: BoxDecoration(
-            color: widget.color.withOpacity(0.15),
+            color: widget.color.withValues(alpha: 0.15),
             shape: BoxShape.circle,
             boxShadow: [
               BoxShadow(
-                color: widget.color.withOpacity(0.2),
+                color: widget.color.withValues(alpha: 0.2),
                 blurRadius: 20,
                 spreadRadius: -5,
               )

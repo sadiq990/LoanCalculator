@@ -393,7 +393,7 @@ class AppTheme {
           GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600),
         ),
       ),
-      dialogTheme: DialogTheme(
+      dialogTheme: DialogThemeData(
         backgroundColor: _darkCardBg,
         surfaceTintColor: Colors.transparent,
         titleTextStyle: GoogleFonts.inter(
@@ -508,7 +508,7 @@ class AppTheme {
           GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600),
         ),
       ),
-      dialogTheme: DialogTheme(
+      dialogTheme: DialogThemeData(
         backgroundColor: _lightSurface,
         surfaceTintColor: Colors.transparent,
         titleTextStyle: GoogleFonts.inter(
