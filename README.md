@@ -19,7 +19,7 @@ Designed with **iOS-first aesthetics**, the app features a stunning Glassmorphis
 - **🌗 Full Dark Mode**: A meticulously crafted dark theme that looks stunning on OLED screens.
 - **💰 Multi-Currency Support**: Default to USD ($) with global configuration options.
 - **📱 Native Performance**: Smooth 60fps animations and haptic feedback for a premium feel.
-- **🔒 Privacy First**: All data is stored locally on the device (SQLite/SharedPreferences). No cloud tracking.
+- **🔒 Privacy First**: All data is stored locally on the device for maximum privacy. No cloud tracking or external servers.
 
 ---
 
