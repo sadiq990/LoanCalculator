@@ -393,6 +393,22 @@ class AppTheme {
           GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600),
         ),
       ),
+      dialogTheme: DialogTheme(
+        backgroundColor: _darkCardBg,
+        surfaceTintColor: Colors.transparent,
+        titleTextStyle: GoogleFonts.inter(
+          color: _darkTextPrimary,
+          fontSize: 20,
+          fontWeight: FontWeight.w700,
+        ),
+        contentTextStyle: GoogleFonts.inter(
+          color: _darkTextSecondary,
+          fontSize: 15,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(radiusLg),
+        ),
+      ),
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
           TargetPlatform.android: CupertinoPageTransitionsBuilder(),
@@ -490,6 +506,22 @@ class AppTheme {
         indicatorColor: primary.withValues(alpha: 0.1),
         labelTextStyle: WidgetStatePropertyAll(
           GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600),
+        ),
+      ),
+      dialogTheme: DialogTheme(
+        backgroundColor: _lightSurface,
+        surfaceTintColor: Colors.transparent,
+        titleTextStyle: GoogleFonts.inter(
+          color: _lightTextPrimary,
+          fontSize: 20,
+          fontWeight: FontWeight.w700,
+        ),
+        contentTextStyle: GoogleFonts.inter(
+          color: _lightTextSecondary,
+          fontSize: 15,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(radiusLg),
         ),
       ),
       pageTransitionsTheme: const PageTransitionsTheme(
