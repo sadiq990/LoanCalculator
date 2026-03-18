@@ -46,11 +46,15 @@ class LoanApp extends StatelessWidget {
           theme: AppTheme.buildLightTheme(),
           darkTheme: AppTheme.buildDarkTheme(),
           themeMode: settings.themeMode,
-          home: !settings.isOnboarded
-              ? const OnboardingScreen()
-              : settings.biometricEnabled
-                  ? _LockedApp(settings: settings)
-                  : const MainShell(),
+          home: !settings.isLoaded
+              ? const Scaffold(
+                  body: Center(child: CircularProgressIndicator()),
+                )
+              : !settings.isOnboarded
+                  ? const OnboardingScreen()
+                  : settings.biometricEnabled
+                      ? _LockedApp(settings: settings)
+                      : const MainShell(),
         );
       },
     );

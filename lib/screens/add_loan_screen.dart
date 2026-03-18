@@ -20,7 +20,6 @@ class AddLoanScreen extends StatefulWidget {
 }
 
 class _AddLoanScreenState extends State<AddLoanScreen> {
-  final _storage = StorageService();
   final _pageController = PageController();
 
   int _currentStep = 0;
@@ -137,11 +136,13 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
         iconId: _selectedIcon,
       );
 
-      await _storage.addLoan(loan);
+      final storage = Provider.of<StorageService>(context, listen: false);
+      await storage.addLoan(loan);
       HapticFeedback.mediumImpact();
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
-      _showError('Failed to create loan');
+      debugPrint('Error creating loan: $e');
+      _showError('Failed to create loan: ${e.toString()}');
     }
     setState(() => _isSaving = false);
   }
@@ -227,17 +228,19 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
   Widget _buildStep1Category() {
     final icons = kLoanIcons.keys.toList();
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(AppTheme.spacing20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('What type of loan?',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800,
-                  color: AppTheme.textPrimary)),
-          const SizedBox(height: 8),
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: AppTheme.textPrimary,
+              ) ?? TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppTheme.textPrimary)),
+          const SizedBox(height: AppTheme.spacing8),
           Text('Select a category and name your loan',
-              style: TextStyle(fontSize: 15, color: AppTheme.textLight)),
-          const SizedBox(height: 24),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.textLight) ?? TextStyle(fontSize: 15, color: AppTheme.textLight)),
+          const SizedBox(height: AppTheme.spacing24),
 
           // Icon Grid
           GridView.builder(
@@ -245,8 +248,8 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
             physics: const NeverScrollableScrollPhysics(),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 4,
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
+              mainAxisSpacing: AppTheme.spacing12,
+              crossAxisSpacing: AppTheme.spacing12,
               childAspectRatio: 0.9,
             ),
             itemCount: icons.length,
@@ -291,7 +294,7 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
             },
           ),
 
-          const SizedBox(height: 24),
+          const SizedBox(height: AppTheme.spacing24),
           // Name
           TextFormField(
             controller: _nameController,
@@ -302,7 +305,7 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
               hintText: 'e.g. Home Mortgage',
             ),
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: AppTheme.spacing32),
           AnimatedButton(label: 'Continue', icon: Icons.arrow_forward_rounded,
               onPressed: _nextStep),
         ],
@@ -314,30 +317,32 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
   Widget _buildStep2Amount() {
     final settings = Provider.of<SettingsProvider>(context, listen: false);
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(AppTheme.spacing20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('How much?',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800,
-                  color: AppTheme.textPrimary)),
-          const SizedBox(height: 8),
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: AppTheme.textPrimary,
+              ) ?? TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppTheme.textPrimary)),
+          const SizedBox(height: AppTheme.spacing8),
           Text('Enter the loan amount and interest rate',
-              style: TextStyle(fontSize: 15, color: AppTheme.textLight)),
-          const SizedBox(height: 24),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.textLight) ?? TextStyle(fontSize: 15, color: AppTheme.textLight)),
+          const SizedBox(height: AppTheme.spacing24),
 
           TextFormField(
             controller: _amountController,
             keyboardType: TextInputType.number,
             inputFormatters: [CurrencyInputFormatter()],
-            style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800),
+            style: Theme.of(context).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w800) ?? const TextStyle(fontSize: 28, fontWeight: FontWeight.w800),
             decoration: InputDecoration(
               labelText: 'Loan Amount',
               prefixIcon: const Icon(Icons.payments_rounded),
               suffixText: settings.currencySymbol,
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: AppTheme.spacing20),
           TextFormField(
             controller: _rateController,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -347,7 +352,7 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
               suffixText: '%',
             ),
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: AppTheme.spacing32),
           AnimatedButton(label: 'Continue', icon: Icons.arrow_forward_rounded,
               onPressed: _nextStep),
         ],
@@ -358,17 +363,19 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
   // Step 3: Schedule
   Widget _buildStep3Schedule() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(AppTheme.spacing20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('Payment schedule',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800,
-                  color: AppTheme.textPrimary)),
-          const SizedBox(height: 8),
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: AppTheme.textPrimary,
+              ) ?? TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppTheme.textPrimary)),
+          const SizedBox(height: AppTheme.spacing8),
           Text('Set the loan term and payment day',
-              style: TextStyle(fontSize: 15, color: AppTheme.textLight)),
-          const SizedBox(height: 24),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.textLight) ?? TextStyle(fontSize: 15, color: AppTheme.textLight)),
+          const SizedBox(height: AppTheme.spacing24),
 
           Row(
             children: [
@@ -389,7 +396,7 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
                 onTap: () => setState(() => _termInYears = !_termInYears),
                 child: AnimatedContainer(
                   duration: AppTheme.animFast,
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                  padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing14, vertical: AppTheme.spacing14),
                   decoration: BoxDecoration(
                     color: AppTheme.surfaceLight,
                     borderRadius: BorderRadius.circular(AppTheme.radiusMd),
@@ -404,7 +411,7 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: AppTheme.spacing20),
 
           // Payment Day
           Text('Payment Due Day',
@@ -453,7 +460,7 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
               },
             ),
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: AppTheme.spacing32),
           AnimatedButton(label: 'Continue', icon: Icons.arrow_forward_rounded,
               onPressed: _nextStep),
         ],
@@ -474,21 +481,23 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
     final monthly = _estimatedMonthly;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(AppTheme.spacing20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('Review & Confirm',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800,
-                  color: AppTheme.textPrimary)),
-          const SizedBox(height: 8),
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: AppTheme.textPrimary,
+              ) ?? TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppTheme.textPrimary)),
+          const SizedBox(height: AppTheme.spacing8),
           Text('Make sure everything looks correct',
-              style: TextStyle(fontSize: 15, color: AppTheme.textLight)),
-          const SizedBox(height: 24),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppTheme.textLight) ?? TextStyle(fontSize: 15, color: AppTheme.textLight)),
+          const SizedBox(height: AppTheme.spacing24),
 
           // Summary card
           Container(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(AppTheme.spacing20),
             decoration: BoxDecoration(
               gradient: AppTheme.primaryGradient,
               borderRadius: BorderRadius.circular(AppTheme.radiusLg),
@@ -497,21 +506,21 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
             child: Column(
               children: [
                 buildGradientIcon(_selectedIcon, size: 56),
-                const SizedBox(height: 12),
+                const SizedBox(height: AppTheme.spacing12),
                 Text(
                   _nameController.text.trim(),
                   style: const TextStyle(color: Colors.white, fontSize: 20,
                       fontWeight: FontWeight.w700),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: AppTheme.spacingXs),
                 Text(
                   kLoanIconLabel(_selectedIcon),
                   style: TextStyle(color: Colors.white.withValues(alpha: 0.7),
                       fontSize: 13),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: AppTheme.spacing20),
                 Divider(color: Colors.white.withValues(alpha: 0.2)),
-                const SizedBox(height: 12),
+                const SizedBox(height: AppTheme.spacing12),
                 _reviewRow('Amount', formatCurrency(amount ?? 0, symbol: symbol)),
                 _reviewRow('Interest Rate', '${rate?.toStringAsFixed(1) ?? '0'}%'),
                 _reviewRow('Term', '$termMonths months'),

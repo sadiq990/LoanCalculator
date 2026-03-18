@@ -1,9 +1,6 @@
 import 'package:flutter/services.dart';
-import 'package:intl/intl.dart';
 
 class CurrencyInputFormatter extends TextInputFormatter {
-  final NumberFormat _formatter = NumberFormat.decimalPattern('en_US');
-
   @override
   TextEditingValue formatEditUpdate(
     TextEditingValue oldValue,
@@ -13,23 +10,23 @@ class CurrencyInputFormatter extends TextInputFormatter {
       return newValue.copyWith(text: '');
     }
 
-    // Remove existing non-digit characters to get raw number
-    String newText = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
-
-    // Prevent leading zeros unless it represents "0"
-    if (newText.startsWith('0') && newText.length > 1) {
-      newText = newText.substring(1);
+    // Allow digits and at most one decimal point
+    String newText = newValue.text;
+    
+    // Check if more than one decimal point
+    if ('.'.allMatches(newText).length > 1) {
+      return oldValue;
     }
 
-    if (newText.isEmpty) return newValue.copyWith(text: '');
+    // Only allow digits and decimal point
+    final regExp = RegExp(r'^[0-9]*\.?[0-9]{0,2}$');
+    if (!regExp.hasMatch(newText.replaceAll(',', ''))) {
+      // If it doesn't match (e.g. more than 2 decimals), keep old
+      if (newText.contains('.') && newText.split('.')[1].length > 2) {
+         return oldValue;
+      }
+    }
 
-    // Format the number
-    final double value = double.parse(newText);
-    final String formatted = _formatter.format(value);
-
-    return newValue.copyWith(
-      text: formatted,
-      selection: TextSelection.collapsed(offset: formatted.length),
-    );
+    return newValue;
   }
 }

@@ -22,8 +22,8 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
-  final StorageService _storage = StorageService();
   List<Loan> _loans = [];
+  List<Loan> _cachedFilteredLoans = [];
   bool _isLoading = true;
   String _searchQuery = '';
   String _filter = 'all'; // all | active | paidOff
@@ -50,16 +50,30 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Future<void> _loadLoans() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
-    final loans = await _storage.getLoans();
-    if (mounted) {
-      setState(() {
-        _loans = loans;
-        _isLoading = false;
-      });
+    try {
+      final storage = Provider.of<StorageService>(context, listen: false);
+      final loans = await storage.getLoans();
+      if (mounted) {
+        setState(() {
+          _loans = loans;
+          _isLoading = false;
+          _updateFilteredLoans();
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading loans: $e');
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
-  List<Loan> get _filteredLoans {
+  /// Cache filtered and sorted loans to avoid recomputing every build
+  void _updateFilteredLoans() {
+    _cachedFilteredLoans = _computeFilteredLoans();
+  }
+
+  List<Loan> _computeFilteredLoans() {
     var filtered = _loans.where((l) => !_archivedLoanIds.contains(l.id));
 
     if (_filter == 'active') filtered = filtered.where((l) => !l.isPaidOff);
@@ -81,6 +95,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     });
     return list;
   }
+
+  List<Loan> get _filteredLoans => _cachedFilteredLoans;
 
   double get _totalDebt =>
       _loans.where((l) => !l.isPaidOff).fold(0, (s, l) => s + l.totalRemaining);
@@ -239,7 +255,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               border: Border.all(color: AppTheme.divider.withValues(alpha: 0.5)),
             ),
             child: TextField(
-              onChanged: (v) => setState(() => _searchQuery = v),
+              onChanged: (v) {
+                setState(() {
+                  _searchQuery = v;
+                  _updateFilteredLoans();
+                });
+              },
               style: const TextStyle(fontSize: 15),
               decoration: InputDecoration(
                 hintText: 'Search loans...',
@@ -265,7 +286,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               const Spacer(),
               PopupMenuButton<String>(
                 icon: Icon(Icons.sort_rounded, color: AppTheme.textLight, size: 22),
-                onSelected: (v) => setState(() => _sortBy = v),
+                onSelected: (v) {
+                  setState(() {
+                    _sortBy = v;
+                    _updateFilteredLoans();
+                  });
+                },
                 itemBuilder: (_) => [
                   _buildSortItem('Due Soon', 'dueSoon'),
                   _buildSortItem('Balance', 'balance'),
@@ -283,7 +309,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Widget _buildFilterChip(String label, String value) {
     final selected = _filter == value;
     return GestureDetector(
-      onTap: () => setState(() => _filter = value),
+      onTap: () {
+        setState(() {
+          _filter = value;
+          _updateFilteredLoans();
+        });
+      },
       child: AnimatedContainer(
         duration: AppTheme.animFast,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
@@ -448,45 +479,42 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(AppTheme.spacing16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
                         children: [
                           // Gradient icon
-                          Hero(
-                            tag: 'loan-icon-${loan.id}',
-                            child: buildGradientIcon(loan.iconId, size: 44),
-                          ),
-                          const SizedBox(width: 12),
+                          buildGradientIcon(loan.iconId, size: 44),
+                          const SizedBox(width: AppTheme.spacing12),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Hero(
-                                  tag: 'loan-title-${loan.id}',
-                                  child: Material(
-                                    color: Colors.transparent,
-                                    child: Text(
-                                      loan.name,
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w700,
-                                        color: AppTheme.textPrimary,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
+                                Text(
+                                  loan.name,
+                                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    color: AppTheme.textPrimary,
+                                  ) ?? TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppTheme.textPrimary,
                                   ),
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                const SizedBox(height: 2),
+                                const SizedBox(height: AppTheme.spacingXs),
                                 Text(
                                   loan.isPaidOff
                                       ? '✅ Paid off'
                                       : isDueSoon
                                           ? '⚠️ Due in ${loan.daysUntilPayment} day${loan.daysUntilPayment != 1 ? 's' : ''}'
                                           : 'Day ${loan.paymentDay} • ${loan.daysUntilPayment}d left',
-                                  style: TextStyle(
+                                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                    fontWeight: isDueSoon ? FontWeight.w600 : FontWeight.w400,
+                                    color: isDueSoon ? AppTheme.warning : AppTheme.textLight,
+                                  ) ?? TextStyle(
                                     fontSize: 12,
                                     fontWeight: isDueSoon ? FontWeight.w600 : FontWeight.w400,
                                     color: isDueSoon ? AppTheme.warning : AppTheme.textLight,
@@ -518,50 +546,48 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: AppTheme.spacing12),
                       // Gradient Progress Bar
-                      Hero(
-                        tag: 'loan-progress-${loan.id}',
-                        child: Material(
-                          color: Colors.transparent,
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(AppTheme.radiusFull),
-                            child: Stack(
-                              children: [
-                                Container(
-                                  height: 6,
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.surfaceLight,
-                                    borderRadius: BorderRadius.circular(AppTheme.radiusFull),
-                                  ),
-                                ),
-                                FractionallySizedBox(
-                                  widthFactor: progress,
-                                  child: Container(
-                                    height: 6,
-                                    decoration: BoxDecoration(
-                                      gradient: gradient.gradient,
-                                      borderRadius: BorderRadius.circular(AppTheme.radiusFull),
-                                    ),
-                                  ),
-                                ),
-                              ],
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(AppTheme.radiusFull),
+                        child: Stack(
+                          children: [
+                            Container(
+                              height: 6,
+                              decoration: BoxDecoration(
+                                color: AppTheme.surfaceLight,
+                                borderRadius: BorderRadius.circular(AppTheme.radiusFull),
+                              ),
                             ),
-                          ),
+                            FractionallySizedBox(
+                              widthFactor: progress,
+                              child: Container(
+                                height: 6,
+                                decoration: BoxDecoration(
+                                  gradient: gradient.gradient,
+                                  borderRadius: BorderRadius.circular(AppTheme.radiusFull),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: AppTheme.spacing8),
                       // Bottom stats
                       Row(
                         children: [
                           Text(
                             'Monthly: ${formatCurrency(loan.monthlyRequired, symbol: settings.currencySymbol)}',
-                            style: TextStyle(fontSize: 12, color: AppTheme.textLight),
+                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: AppTheme.textLight,
+                            ) ?? TextStyle(fontSize: 12, color: AppTheme.textLight),
                           ),
                           const Spacer(),
                           Text(
                             'Rate: ${loan.interestRate.toStringAsFixed(1)}%',
-                            style: TextStyle(fontSize: 12, color: AppTheme.textLight),
+                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: AppTheme.textLight,
+                            ) ?? TextStyle(fontSize: 12, color: AppTheme.textLight),
                           ),
                         ],
                       ),
@@ -583,18 +609,47 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppTheme.radiusLg),
         ),
-        title: const Text('Delete Loan'),
-        content: Text('Delete "${loan.name}"? This cannot be undone.'),
+        elevation: AppTheme.shadowMd.first.blurRadius,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        title: Text(
+          'Delete Loan',
+          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+            color: AppTheme.textPrimary,
+          ),
+        ),
+        content: Text(
+          'Delete "${loan.name}"? This cannot be undone.',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: AppTheme.textLight,
+          ),
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(
+              'Cancel',
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                color: AppTheme.primary,
+              ),
+            ),
+          ),
           TextButton(
             onPressed: () async {
-              await _storage.deleteLoan(loan.id);
+              final storage = Provider.of<StorageService>(context, listen: false);
+              await storage.deleteLoan(loan.id);
               if (mounted) Navigator.pop(context, true);
               _loadLoans();
             },
-            style: TextButton.styleFrom(foregroundColor: AppTheme.error),
-            child: const Text('Delete'),
+            style: TextButton.styleFrom(
+              foregroundColor: AppTheme.error,
+            ),
+            child: Text(
+              'Delete',
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                color: AppTheme.error,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ],
       ),
@@ -744,60 +799,63 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (context) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
-          left: 20,
-          right: 20,
-          top: 24,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppTheme.divider,
-                  borderRadius: BorderRadius.circular(2),
+      builder: (context) => SingleChildScrollView(
+        child: Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+            left: 20,
+            right: 20,
+            top: 24,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppTheme.divider,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'Quick Payment — ${loan.name}',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: controller,
-              keyboardType: TextInputType.number,
-              autofocus: true,
-              decoration: InputDecoration(
-                hintText: loan.monthlyRequired.toStringAsFixed(0),
-                suffixText: settings.currencySymbol,
+              const SizedBox(height: 20),
+              Text(
+                'Quick Payment — ${loan.name}',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
               ),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: () async {
-                  final amount = double.tryParse(controller.text);
-                  if (amount != null && amount > 0) {
-                    await _storage.addPayment(loan.id, Payment.create(amount: amount));
-                    if (context.mounted) Navigator.pop(context);
-                    _loadLoans();
-                    HapticFeedback.mediumImpact();
-                  }
-                },
-                child: const Text('Record Payment'),
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                keyboardType: TextInputType.number,
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: loan.monthlyRequired.toStringAsFixed(0),
+                  suffixText: settings.currencySymbol,
+                ),
               ),
-            ),
-            const SizedBox(height: 20),
-          ],
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () async {
+                    final amount = double.tryParse(controller.text);
+                    if (amount != null && amount > 0) {
+                      final storage = Provider.of<StorageService>(context, listen: false);
+                      await storage.addPayment(loan.id, Payment.create(amount: amount));
+                      if (context.mounted) Navigator.pop(context);
+                      _loadLoans();
+                      HapticFeedback.mediumImpact();
+                    }
+                  },
+                  child: const Text('Record Payment'),
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+          ),
         ),
       ),
     );

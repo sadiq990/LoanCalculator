@@ -48,9 +48,20 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     super.dispose();
   }
 
-  void _finishOnboarding() {
-    final settings = Provider.of<SettingsProvider>(context, listen: false);
-    settings.completeOnboarding();
+  Future<void> _finishOnboarding() async {
+    try {
+      final settings = Provider.of<SettingsProvider>(context, listen: false);
+      await settings.completeOnboarding();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error completing onboarding: ${e.toString()}'),
+            backgroundColor: AppTheme.error,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -168,12 +179,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
                       // Next / Start Button
                       GestureDetector(
-                        onTap: () {
+                        onTap: () async {
                           HapticFeedback.lightImpact();
                           if (_currentPage < _pages.length - 1) {
                             _pageController.nextPage(duration: const Duration(milliseconds: 500), curve: Curves.easeInOutCubic);
                           } else {
-                            _finishOnboarding();
+                            await _finishOnboarding();
                           }
                         },
                         child: AnimatedContainer(

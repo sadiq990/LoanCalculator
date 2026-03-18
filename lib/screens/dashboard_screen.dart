@@ -19,7 +19,6 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen>
     with SingleTickerProviderStateMixin {
-  final StorageService _storage = StorageService();
   List<Loan> _loans = [];
   bool _isLoading = true;
   late AnimationController _animController;
@@ -41,7 +40,8 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Future<void> _loadLoans() async {
-    final loans = await _storage.getLoans();
+    final storage = Provider.of<StorageService>(context, listen: false);
+    final loans = await storage.getLoans();
     if (mounted) {
       setState(() {
         _loans = loans;
@@ -268,10 +268,10 @@ class _DashboardScreenState extends State<DashboardScreen>
       children: [
         Expanded(child: _buildMiniStat('Principal', formatCurrency(principal, symbol: symbol),
             Icons.account_balance_rounded, AppTheme.primary)),
-        const SizedBox(width: 10),
+        const SizedBox(width: AppTheme.spacing10),
         Expanded(child: _buildMiniStat('Interest', formatCurrency(interest, symbol: symbol),
             Icons.percent_rounded, AppTheme.warning)),
-        const SizedBox(width: 10),
+        const SizedBox(width: AppTheme.spacing10),
         Expanded(child: _buildMiniStat('Active', count.toString(),
             Icons.receipt_long_rounded, AppTheme.accent)),
       ],
@@ -280,12 +280,12 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   Widget _buildMiniStat(String label, String value, IconData icon, Color color) {
     return GlassCard(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(AppTheme.spacing14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            padding: const EdgeInsets.all(6),
+            padding: const EdgeInsets.all(AppTheme.spacing8),
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [color.withValues(alpha: 0.2), color.withValues(alpha: 0.05)],
@@ -294,10 +294,24 @@ class _DashboardScreenState extends State<DashboardScreen>
             ),
             child: Icon(icon, color: color, size: 16),
           ),
-          const SizedBox(height: 10),
-          Text(value, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700,
-              color: AppTheme.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis),
-          Text(label, style: TextStyle(fontSize: 11, color: AppTheme.textLight)),
+          const SizedBox(height: AppTheme.spacing10),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: AppTheme.textPrimary,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: AppTheme.textLight,
+            ),
+          ),
         ],
       ),
     );

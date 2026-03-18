@@ -17,7 +17,6 @@ class PayoffSimulatorScreen extends StatefulWidget {
 }
 
 class _PayoffSimulatorScreenState extends State<PayoffSimulatorScreen> {
-  final StorageService _storage = StorageService();
   List<Loan> _loans = [];
   Loan? _selectedLoan;
   double _extraPayment = 100;
@@ -30,7 +29,8 @@ class _PayoffSimulatorScreenState extends State<PayoffSimulatorScreen> {
   }
 
   Future<void> _loadLoans() async {
-    final loans = await _storage.getLoans();
+    final storage = Provider.of<StorageService>(context, listen: false);
+    final loans = await storage.getLoans();
     final activeLoans = loans.where((l) => !l.isPaidOff).toList();
     if (mounted) {
       setState(() {

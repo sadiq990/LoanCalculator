@@ -1,3 +1,5 @@
+import 'package:decimal/decimal.dart';
+import 'package:rational/rational.dart';
 import 'payment.dart';
 import 'amortization_entry.dart';
 import 'dart:math' as math;
@@ -9,7 +11,7 @@ class Loan {
   final double totalAmount; // Principal amount
   final double interestRate; // Annual interest rate in percent
   final int termMonths;
-  final String iconId; // New field for custom icon
+  final String iconId;
   late final double monthlyRequired;
   final int paymentDay;
   final DateTime createdAt;
@@ -26,14 +28,19 @@ class Loan {
     this.iconId = 'default',
     List<Payment>? payments,
   }) : payments = payments ?? [] {
-    // Calculate standard monthly payment
+    // Calculate standard monthly payment using Decimal for precision
+    final dAmount = Decimal.parse(totalAmount.toString());
+    final dRate = Decimal.parse(interestRate.toString());
+    final dTerm = Decimal.fromInt(termMonths);
+
     if (interestRate <= 0) {
-      monthlyRequired = totalAmount / termMonths;
+      // Branch for zero interest
+      monthlyRequired = (dAmount / dTerm).toDouble();
     } else {
-      final r = (interestRate / 100) / 12;
+      final r = (dRate / (Decimal.fromInt(100) * Decimal.fromInt(12))).toDouble();
       final n = termMonths;
       final factor = math.pow(1 + r, n).toDouble();
-      monthlyRequired = totalAmount * r * factor / (factor - 1);
+      monthlyRequired = (totalAmount * r * factor / (factor - 1));
     }
   }
 
@@ -66,44 +73,52 @@ class Loan {
 
   /// Remaining amount of the total contract value
   double get totalRemaining {
-    final val = totalContractValue - totalPaid;
+    final dTotalValue = Decimal.parse(totalContractValue.toStringAsFixed(10));
+    final dTotalPaid = Decimal.parse(totalPaid.toStringAsFixed(10));
+    final val = (dTotalValue - dTotalPaid).toDouble();
     return val < 0 ? 0 : val;
   }
 
   /// Current Principal Balance (approximate for typical scenarios)
   double get remainingDebt {
-    double balance = totalAmount;
+    Decimal balance = Decimal.parse(totalAmount.toString());
     final sortedPayments = List<Payment>.from(payments)
       ..sort((a, b) => a.date.compareTo(b.date));
 
     DateTime lastDate = createdAt;
     DateTime now = DateTime.now();
 
+    final dRate = Decimal.parse(interestRate.toString());
+    final d365 = Decimal.fromInt(365);
+    final d100 = Decimal.fromInt(100);
+
     for (var payment in sortedPayments) {
-      if (balance <= 0) break;
+      if (balance <= Decimal.zero) break;
 
       int days = payment.date.difference(lastDate).inDays;
       if (days < 0) days = 0;
 
-      double dailyRate = (interestRate / 100) / 365;
-      double interest = balance * dailyRate * days;
-
-      balance += interest;
-      balance -= payment.amount;
-
+      if (interestRate > 0) {
+        final dailyRate = dRate / (d100 * d365);
+        final interest = (dailyRate * balance.toRational() * Rational.fromInt(days)).toDecimal(scaleOnInfinitePrecision: 10);
+        balance += interest;
+      }
+      
+      balance -= Decimal.parse(payment.amount.toString());
       lastDate = payment.date;
     }
 
-    if (balance > 0) {
+    if (balance > Decimal.zero && interestRate > 0) {
       int days = now.difference(lastDate).inDays;
       if (days > 0) {
-        double dailyRate = (interestRate / 100) / 365;
-        double interest = balance * dailyRate * days;
+        final dailyRate = dRate / (d100 * d365);
+        final interest = (dailyRate * balance.toRational() * Rational.fromInt(days)).toDecimal(scaleOnInfinitePrecision: 10);
         balance += interest;
       }
     }
 
-    return balance < 0 ? 0 : balance;
+    final result = balance.toDouble();
+    return result < 0 ? 0 : result;
   }
 
   double get totalPaid => payments.fold(0.0, (sum, p) => sum + p.amount);
@@ -111,57 +126,50 @@ class Loan {
   /// Progress based on Total Repayment (Principal + Interest)
   double get progress {
     if (totalContractValue <= 0) return 0;
-    return totalPaid / totalContractValue;
+    return (Decimal.parse(totalPaid.toStringAsFixed(10)) / Decimal.parse(totalContractValue.toStringAsFixed(10))).toDouble();
   }
 
   /// Calculate amortization schedule
-  /// [extraMonthlyPayment] is an optional extra amount paid EACH month
   List<AmortizationEntry> getAmortizationSchedule({
     double extraMonthlyPayment = 0,
   }) {
     final List<AmortizationEntry> schedule = [];
-    double currentBalance = remainingDebt;
-    // Start from next payment date (simplified: next month from now or last payment)
+    Decimal currentBalance = Decimal.parse(remainingDebt.toString());
     DateTime currentDate = DateTime.now();
 
-    // Safety check for invalid loans
-    if (currentBalance <= 0 || monthlyRequired <= 0) return [];
+    if (currentBalance <= Decimal.zero || monthlyRequired <= 0) return [];
 
-    // Monthly interest rate
-    final monthlyRate = interestRate / 100 / 12;
+    final dMonthlyRequired = Decimal.parse(monthlyRequired.toString());
+    final dExtra = Decimal.parse(extraMonthlyPayment.toString());
+    final dMonthlyRate = Decimal.parse(interestRate.toString()) / (Decimal.fromInt(100) * Decimal.fromInt(12));
 
     int month = 1;
 
-    // Limit to 30 years (360 months) to prevent infinite loops on bad data
-    while (currentBalance > 0 && month <= 360) {
-      // 1. Calculate Interest for this month
-      double interestPayment = currentBalance * monthlyRate;
+    while (currentBalance > Decimal.zero && month <= 360) {
+      final interestPayment = (currentBalance.toRational() * dMonthlyRate).toDecimal(scaleOnInfinitePrecision: 10);
+      Decimal totalPayment = dMonthlyRequired + dExtra;
 
-      // 2. Calculate Total Payment for this month
-      double totalPayment = monthlyRequired + extraMonthlyPayment;
-
-      // Cap payment at remaining balance + interest
       if (totalPayment > currentBalance + interestPayment) {
         totalPayment = currentBalance + interestPayment;
       }
 
-      // 3. Calculate Principal
-      double principalPayment = totalPayment - interestPayment;
-
-      // 4. Update Balance
+      Decimal principalPayment = totalPayment - interestPayment;
       currentBalance -= principalPayment;
 
-      // Handle floating point precision
-      if (currentBalance < 0.01) currentBalance = 0;
+      if (currentBalance < Decimal.parse('0.01')) currentBalance = Decimal.zero;
+
+      final nextDate = DateTime(currentDate.year, currentDate.month + month, 1);
+      final lastDay = DateTime(nextDate.year, nextDate.month + 1, 0).day;
+      final actualDay = paymentDay > lastDay ? lastDay : paymentDay;
 
       schedule.add(
         AmortizationEntry(
           monthIndex: month,
-          date: DateTime(currentDate.year, currentDate.month + month, currentDate.day),
-          payment: totalPayment,
-          principal: principalPayment,
-          interest: interestPayment,
-          remainingBalance: currentBalance,
+          date: DateTime(nextDate.year, nextDate.month, actualDay),
+          payment: totalPayment.toDouble(),
+          principal: principalPayment.toDouble(),
+          interest: interestPayment.toDouble(),
+          remainingBalance: currentBalance.toDouble(),
         ),
       );
 
@@ -177,7 +185,6 @@ class Loan {
 
   DateTime get nextPaymentDate {
     final now = DateTime.now();
-    // Clamp paymentDay to valid range for the month
     int clampedDay(int year, int month) {
       final lastDay = DateTime(year, month + 1, 0).day;
       return paymentDay > lastDay ? lastDay : paymentDay;

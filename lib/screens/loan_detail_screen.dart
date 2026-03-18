@@ -26,7 +26,6 @@ class LoanDetailScreen extends StatefulWidget {
 
 class _LoanDetailScreenState extends State<LoanDetailScreen>
     with SingleTickerProviderStateMixin {
-  final StorageService _storage = StorageService();
   final TextEditingController _paymentController = TextEditingController();
 
   Loan? _loan;
@@ -59,7 +58,8 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
   Future<void> _loadLoan() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
-    final loan = await _storage.getLoan(widget.loanId);
+    final storage = Provider.of<StorageService>(context, listen: false);
+    final loan = await storage.getLoan(widget.loanId);
     if (!mounted) return;
     setState(() {
       _loan = loan;
@@ -79,7 +79,8 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
     }
     setState(() => _isSaving = true);
     final payment = Payment.create(amount: amount);
-    final updatedLoan = await _storage.addPayment(widget.loanId, payment);
+    final storage = Provider.of<StorageService>(context, listen: false);
+    final updatedLoan = await storage.addPayment(widget.loanId, payment);
     if (updatedLoan != null) {
       setState(() {
         _loan = updatedLoan;
@@ -127,7 +128,9 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
       ),
     );
     if (confirm == true) {
-      await _storage.deleteLoan(widget.loanId);
+      if (!mounted) return;
+      final storage = Provider.of<StorageService>(context, listen: false);
+      await storage.deleteLoan(widget.loanId);
       if (mounted) Navigator.pop(context, true);
     }
   }
@@ -450,15 +453,17 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
               ),
               child: const Icon(Icons.payments_rounded, color: AppTheme.primary, size: 20),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: AppTheme.spacing12),
             const Text('Record Payment',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
           ]),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppTheme.spacing16),
           TextFormField(
             controller: _paymentController,
             keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+            ],
             style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
             decoration: InputDecoration(
               hintText: loan.monthlyRequired.toStringAsFixed(0),
@@ -468,10 +473,10 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
                   color: AppTheme.textSecondary),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppTheme.spacing8),
           Text('Monthly: ${formatCurrency(loan.monthlyRequired, symbol: settings.currencySymbol)}',
               style: TextStyle(fontSize: 13, color: AppTheme.textLight)),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppTheme.spacing16),
           AnimatedButton(label: 'Record Payment', icon: Icons.check_rounded,
               isLoading: _isSaving, onPressed: _recordPayment),
         ],
@@ -481,13 +486,14 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
 
   Widget _buildLoanInfo(Loan loan, SettingsProvider settings) {
     return AnimatedCard(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(AppTheme.spacing16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Loan Terms', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600,
+          Text('Loan Terms',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600,
               color: AppTheme.textPrimary)),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppTheme.spacing12),
           Row(children: [
             Expanded(child: _infoItem('Interest Rate', '${loan.interestRate.toStringAsFixed(1)}%')),
             Expanded(child: _infoItem('Term', '${loan.termMonths} Months')),
@@ -504,7 +510,7 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label, style: TextStyle(fontSize: 12, color: AppTheme.textLight)),
-        const SizedBox(height: 4),
+        const SizedBox(height: AppTheme.spacing8),
         Text(value, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700,
             color: AppTheme.textPrimary)),
       ],
