@@ -129,28 +129,57 @@ class Loan {
     return (Decimal.parse(totalPaid.toStringAsFixed(10)) / Decimal.parse(totalContractValue.toStringAsFixed(10))).toDouble();
   }
 
-  /// Calculate amortization schedule
-  List<AmortizationEntry> getAmortizationSchedule({
+  /// Calculate original amortization schedule (combining history + future)
+  List<AmortizationEntry> getOriginalAmortizationSchedule({
     double extraMonthlyPayment = 0,
   }) {
     final List<AmortizationEntry> schedule = [];
-    Decimal currentBalance = Decimal.parse(remainingDebt.toString());
-    DateTime currentDate = DateTime.now();
+    Decimal currentBalance = Decimal.parse(totalAmount.toString());
+    DateTime currentDate = createdAt;
 
     if (currentBalance <= Decimal.zero || monthlyRequired <= 0) return [];
 
-    final dMonthlyRequired = Decimal.parse(monthlyRequired.toString());
+    final Rational dMonthlyRate = interestRate <= 0 
+      ? Rational.zero 
+      : Decimal.parse(interestRate.toString()) / (Decimal.fromInt(100) * Decimal.fromInt(12));
     final dExtra = Decimal.parse(extraMonthlyPayment.toString());
-    final dMonthlyRate = Decimal.parse(interestRate.toString()) / (Decimal.fromInt(100) * Decimal.fromInt(12));
+
+    // Sort actual payments chronologically to map them to specific months.
+    final sortedPayments = List<Payment>.from(payments)
+      ..sort((a, b) => a.date.compareTo(b.date));
 
     int month = 1;
 
     while (currentBalance > Decimal.zero && month <= 360) {
-      final interestPayment = (currentBalance.toRational() * dMonthlyRate).toDecimal(scaleOnInfinitePrecision: 10);
-      Decimal totalPayment = dMonthlyRequired + dExtra;
+      bool hasActualPayment = (month - 1) < sortedPayments.length;
+      Decimal totalPayment;
+      Decimal interestPayment;
+      bool isMonthPaid = false;
 
-      if (totalPayment > currentBalance + interestPayment) {
-        totalPayment = currentBalance + interestPayment;
+      // Calculate pure interest up to this month
+      if (interestRate > 0) {
+        interestPayment = (currentBalance.toRational() * dMonthlyRate).toDecimal(scaleOnInfinitePrecision: 10);
+      } else {
+        interestPayment = Decimal.zero;
+      }
+
+      if (hasActualPayment) {
+        // Historical Actual Payment
+        final actualPmt = sortedPayments[month - 1];
+        totalPayment = Decimal.parse(actualPmt.amount.toString());
+        isMonthPaid = true;
+
+        if (totalPayment > currentBalance + interestPayment) {
+          totalPayment = currentBalance + interestPayment;
+        }
+      } else {
+        // Future Projected Payment
+        Decimal requiredPayment = Decimal.parse(monthlyRequired.toString());
+
+        totalPayment = requiredPayment + dExtra;
+        if (totalPayment > currentBalance + interestPayment) {
+          totalPayment = currentBalance + interestPayment;
+        }
       }
 
       Decimal principalPayment = totalPayment - interestPayment;
@@ -165,11 +194,12 @@ class Loan {
       schedule.add(
         AmortizationEntry(
           monthIndex: month,
-          date: DateTime(nextDate.year, nextDate.month, actualDay),
+          date: hasActualPayment ? sortedPayments[month - 1].date : DateTime(nextDate.year, nextDate.month, actualDay),
           payment: totalPayment.toDouble(),
           principal: principalPayment.toDouble(),
           interest: interestPayment.toDouble(),
           remainingBalance: currentBalance.toDouble(),
+          isPaid: isMonthPaid,
         ),
       );
 
@@ -222,7 +252,7 @@ class Loan {
       'paymentDay': paymentDay,
       'createdAt': createdAt.toIso8601String(),
       'iconId': iconId,
-      'payments': payments.map((p) => p.toJson()).toList(),
+      'payments': payments.map((e) => e.toJson()).toList(),
     };
   }
 
@@ -236,9 +266,8 @@ class Loan {
       paymentDay: json['paymentDay'] as int,
       createdAt: DateTime.parse(json['createdAt'] as String),
       iconId: json['iconId'] as String? ?? 'default',
-      payments:
-          (json['payments'] as List<dynamic>?)
-              ?.map((p) => Payment.fromJson(p as Map<String, dynamic>))
+      payments: (json['payments'] as List<dynamic>?)
+          ?.map((e) => Payment.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
     );

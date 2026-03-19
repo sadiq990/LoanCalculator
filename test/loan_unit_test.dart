@@ -65,7 +65,7 @@ void main() {
         createdAt: DateTime.now(),
       );
 
-      final schedule = loan.getAmortizationSchedule();
+      final schedule = loan.getOriginalAmortizationSchedule();
       // Should result in ~12 months
       expect(schedule.length, 12);
       expect(schedule.last.remainingBalance, closeTo(0, 0.05));

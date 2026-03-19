@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 
 class CurrencyInputFormatter extends TextInputFormatter {
   @override
@@ -10,23 +11,39 @@ class CurrencyInputFormatter extends TextInputFormatter {
       return newValue.copyWith(text: '');
     }
 
-    // Allow digits and at most one decimal point
-    String newText = newValue.text;
+    // Allow digits and comma (for decimals)
+    String cleanText = newValue.text.replaceAll(RegExp(r'[^0-9,]'), '');
     
-    // Check if more than one decimal point
-    if ('.'.allMatches(newText).length > 1) {
+    // Check if more than one comma limit
+    if (','.allMatches(cleanText).length > 1) {
       return oldValue;
     }
 
-    // Only allow digits and decimal point
-    final regExp = RegExp(r'^[0-9]*\.?[0-9]{0,2}$');
-    if (!regExp.hasMatch(newText.replaceAll(',', ''))) {
-      // If it doesn't match (e.g. more than 2 decimals), keep old
-      if (newText.contains('.') && newText.split('.')[1].length > 2) {
-         return oldValue;
+    List<String> parts = cleanText.split(',');
+    String intPart = parts[0];
+    String decimalPart = parts.length > 1 ? parts[1] : '';
+
+    if (decimalPart.length > 2) {
+       decimalPart = decimalPart.substring(0, 2);
+    }
+
+    String formattedInt = '';
+    if (intPart.isNotEmpty) {
+      final number = int.tryParse(intPart);
+      if (number != null) {
+        // use standard en_US but replace commas with dots
+        formattedInt = NumberFormat('#,###', 'en_US').format(number).replaceAll(',', '.');
       }
     }
 
-    return newValue;
+    String newString = formattedInt;
+    if (parts.length > 1 || cleanText.endsWith(',')) {
+      newString += ',$decimalPart';
+    }
+
+    return TextEditingValue(
+      text: newString,
+      selection: TextSelection.collapsed(offset: newString.length),
+    );
   }
 }

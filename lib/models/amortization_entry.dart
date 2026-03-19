@@ -5,6 +5,7 @@ class AmortizationEntry {
   final double principal;
   final double interest;
   final double remainingBalance;
+  final bool isPaid;
 
   const AmortizationEntry({
     required this.monthIndex,
@@ -13,5 +14,6 @@ class AmortizationEntry {
     required this.principal,
     required this.interest,
     required this.remainingBalance,
+    this.isPaid = false,
   });
 }

@@ -3,7 +3,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
 import '../models/loan.dart';
-import '../models/payment.dart';
+
 
 class PdfService {
   static Future<void> generateLoanReport(
@@ -133,8 +133,11 @@ class PdfService {
                   0: pw.Alignment.centerLeft,
                   1: pw.Alignment.centerRight,
                   2: pw.Alignment.centerRight,
+                  3: pw.Alignment.centerRight,
+                  4: pw.Alignment.centerRight,
+                  5: pw.Alignment.center,
                 },
-                headers: ['Date', 'Amount Paid', 'Accumulated'],
+                headers: ['Date', 'Total Pmt', 'Principal', 'Interest', 'Balance', 'Status'],
                 data: _generatePaymentData(loan, currencyFormat, dateFormat),
               ),
 
@@ -186,23 +189,19 @@ class PdfService {
     NumberFormat currency,
     DateFormat date,
   ) {
-    if (loan.payments.isEmpty) {
-      return [
-        ['-', '-', '-'],
-      ];
+    final schedule = loan.getOriginalAmortizationSchedule();
+    if (schedule.isEmpty) {
+      return [['-', '-', '-', '-', '-', '-']];
     }
 
-    double accumulated = 0;
-    // Sort chronological
-    final payments = List<Payment>.from(loan.payments)
-      ..sort((a, b) => a.date.compareTo(b.date));
-
-    return payments.map((p) {
-      accumulated += p.amount;
+    return schedule.map((entry) {
       return [
-        date.format(p.date),
-        currency.format(p.amount),
-        currency.format(accumulated),
+        date.format(entry.date),
+        currency.format(entry.payment),
+        currency.format(entry.principal),
+        currency.format(entry.interest),
+        currency.format(entry.remainingBalance),
+        entry.isPaid ? 'Paid' : 'Unpaid'
       ];
     }).toList();
   }

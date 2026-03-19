@@ -9,6 +9,7 @@ import '../core/widgets/animated_card.dart';
 import '../core/widgets/animated_button.dart';
 import '../core/constants/loan_icons.dart';
 import '../core/utils/currency_formatter.dart';
+import '../core/utils/input_formatters.dart';
 import '../models/loan.dart';
 import '../models/payment.dart';
 import '../services/storage_service.dart';
@@ -70,7 +71,7 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
   }
 
   Future<void> _recordPayment() async {
-    final amount = double.tryParse(_paymentController.text.replaceAll(' ', ''));
+    final amount = double.tryParse(_paymentController.text.replaceAll('.', '').replaceAll(',', '.'));
     if (amount == null || amount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please enter a valid amount'), backgroundColor: AppTheme.error),
@@ -462,7 +463,7 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
             controller: _paymentController,
             keyboardType: TextInputType.number,
             inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+              CurrencyInputFormatter(),
             ],
             style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
             decoration: InputDecoration(
@@ -496,7 +497,11 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
           const SizedBox(height: AppTheme.spacing12),
           Row(children: [
             Expanded(child: _infoItem('Interest Rate', '${loan.interestRate.toStringAsFixed(1)}%')),
-            Expanded(child: _infoItem('Term', '${loan.termMonths} Months')),
+            Expanded(child: _infoItem('Term', '${loan.termMonths} Mo')),
+          ]),
+          const SizedBox(height: AppTheme.spacing12),
+          Row(children: [
+            Expanded(child: _infoItem('Remaining', '${loan.simulatePayoff().monthsToPayoff} Mo')),
             Expanded(child: _infoItem('Monthly',
                 formatCurrency(loan.monthlyRequired, symbol: settings.currencySymbol))),
           ]),

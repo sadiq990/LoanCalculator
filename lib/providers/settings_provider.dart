@@ -14,6 +14,7 @@ class SettingsProvider extends ChangeNotifier {
   bool _biometricEnabled = false;
   bool _isOnboarded = false;
   String? _pin;
+  Map<String, int> _loanReminderDays = {};
   bool _isLoaded = false;
 
   ThemeMode get themeMode => _themeMode;
@@ -22,6 +23,7 @@ class SettingsProvider extends ChangeNotifier {
   bool get biometricEnabled => _biometricEnabled;
   bool get isOnboarded => _isOnboarded;
   String? get pin => _pin;
+  Map<String, int> get loanReminderDays => _loanReminderDays;
   bool get isLoaded => _isLoaded;
 
   SettingsProvider() {
@@ -80,6 +82,19 @@ class SettingsProvider extends ChangeNotifier {
       _biometricEnabled = prefs.getBool('biometricEnabled') ?? false;
       _isOnboarded = prefs.getBool(keyOnboarded) ?? false;
       _pin = prefs.getString(keyPin);
+      
+      final remindersStr = prefs.getString('loan_reminder_days');
+      if (remindersStr != null && remindersStr.isNotEmpty) {
+        try {
+          for (var pair in remindersStr.split(',')) {
+            final split = pair.split(':');
+            if (split.length == 2) {
+              _loanReminderDays[split[0]] = int.tryParse(split[1]) ?? 5;
+            }
+          }
+        } catch (_) {}
+      }
+
       _isLoaded = true;
       notifyListeners();
     } catch (e) {
@@ -129,6 +144,24 @@ class SettingsProvider extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('biometricEnabled', value);
+  }
+
+  Future<void> setReminderDays(String loanId, int days) async {
+    _loanReminderDays[loanId] = days;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    
+    // Encode map as loanId:days,loanId:days
+    final encoded = _loanReminderDays.entries.map((e) => '${e.key}:${e.value}').join(',');
+    await prefs.setString('loan_reminder_days', encoded);
+  }
+  
+  Future<void> removeReminder(String loanId) async {
+    _loanReminderDays.remove(loanId);
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    final encoded = _loanReminderDays.entries.map((e) => '${e.key}:${e.value}').join(',');
+    await prefs.setString('loan_reminder_days', encoded);
   }
 
   Future<void> completeOnboarding() async {

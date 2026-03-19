@@ -23,8 +23,8 @@ class _AmortizationScreenState extends State<AmortizationScreen> {
     final settings = Provider.of<SettingsProvider>(context);
     final symbol = settings.currencySymbol;
     
-    final schedule = widget.loan.getAmortizationSchedule(extraMonthlyPayment: _extraMonthly);
-    final original = widget.loan.getAmortizationSchedule(extraMonthlyPayment: 0);
+    final schedule = widget.loan.getOriginalAmortizationSchedule(extraMonthlyPayment: _extraMonthly);
+    final original = widget.loan.getOriginalAmortizationSchedule(extraMonthlyPayment: 0);
 
     final originalInterest = original.fold(0.0, (s, e) => s + e.interest);
     final simulatedInterest = schedule.fold(0.0, (s, e) => s + e.interest);
@@ -47,7 +47,7 @@ class _AmortizationScreenState extends State<AmortizationScreen> {
               itemCount: schedule.length,
               itemBuilder: (context, index) {
                 final entry = schedule[index];
-                return _buildAmortizationRow(entry, symbol, index == schedule.length - 1);
+                return _buildAmortizationRow(entry, symbol, index == schedule.length - 1, entry.isPaid);
               },
             ),
           ),
@@ -119,31 +119,39 @@ class _AmortizationScreenState extends State<AmortizationScreen> {
     );
   }
 
-  Widget _buildAmortizationRow(AmortizationEntry entry, String symbol, bool isLast) {
-    return Container(
+  Widget _buildAmortizationRow(AmortizationEntry entry, String symbol, bool isLast, bool isPaid) {
+    return AnimatedContainer(
+      duration: AppTheme.animFast,
       padding: const EdgeInsets.symmetric(vertical: 16),
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: AppTheme.divider.withValues(alpha: 0.5))),
       ),
-      child: Row(
-        children: [
-          // Month bubble
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: AppTheme.surfaceLight,
-              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+      child: Opacity(
+        opacity: isPaid ? 0.6 : 1.0,
+        child: Row(
+          children: [
+            // Month bubble
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: isPaid ? AppTheme.success.withValues(alpha: 0.15) : AppTheme.surfaceLight,
+                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                border: isPaid ? Border.all(color: AppTheme.success.withValues(alpha: 0.3)) : null,
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (isPaid)
+                    const Icon(Icons.check_rounded, color: AppTheme.success, size: 20)
+                  else ...[
+                    Text('${entry.monthIndex}', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppTheme.textPrimary)),
+                    Text(_getMonthLabel(entry.date), style: TextStyle(fontSize: 9, color: AppTheme.textLight, fontWeight: FontWeight.w600)),
+                  ],
+                ],
+              ),
             ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text('${entry.monthIndex}', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppTheme.textPrimary)),
-                Text(_getMonthLabel(entry.date), style: TextStyle(fontSize: 9, color: AppTheme.textLight, fontWeight: FontWeight.w600)),
-              ],
-            ),
-          ),
-          const SizedBox(width: 16),
+            const SizedBox(width: 16),
           // Principal / Interest
           Expanded(
             child: Column(
@@ -177,6 +185,7 @@ class _AmortizationScreenState extends State<AmortizationScreen> {
             ],
           ),
         ],
+      ),
       ),
     );
   }

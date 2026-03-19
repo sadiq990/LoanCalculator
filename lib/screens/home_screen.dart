@@ -132,10 +132,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 child: _isLoading
                     ? const Center(child: CircularProgressIndicator())
                     : _filteredLoans.isEmpty
-                        ? _buildEmptyState()
+                        ? SingleChildScrollView(child: _buildEmptyState())
                         : _buildLoanList(settings),
               ),
-              const SizedBox(height: 80), // Space for bottom nav
             ],
           ),
           // Expanded FAB overlay
@@ -419,7 +418,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       color: AppTheme.primary,
       child: AnimationLimiter(
         child: ListView.builder(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 100), // Integrated bottom padding
           itemCount: loans.length,
           itemBuilder: (context, index) {
             final loan = loans[index];

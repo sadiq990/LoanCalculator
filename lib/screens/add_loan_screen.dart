@@ -35,8 +35,8 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
 
   // Step 3: Schedule
   final _termController = TextEditingController();
-  bool _termInYears = false;
-  int _paymentDay = 1;
+  bool _termInYears = true;
+  int _paymentDay = 15;
 
   bool _isSaving = false;
 
@@ -84,7 +84,7 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
         return true;
       case 1:
         final amount = double.tryParse(
-          _amountController.text.replaceAll(RegExp(r'[^\d.]'), ''),
+          _amountController.text.replaceAll('.', '').replaceAll(',', '.'),
         );
         final rate = double.tryParse(_rateController.text);
         if (amount == null || amount <= 0) {
@@ -118,7 +118,7 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
     setState(() => _isSaving = true);
     try {
       final amount = double.parse(
-        _amountController.text.replaceAll(RegExp(r'[^\d.]'), ''),
+        _amountController.text.replaceAll('.', '').replaceAll(',', '.'),
       );
       final rate = double.parse(_rateController.text);
       final rawTerm = int.parse(_termController.text);
@@ -149,7 +149,7 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
 
   double? get _estimatedMonthly {
     final amount = double.tryParse(
-      _amountController.text.replaceAll(RegExp(r'[^\d.]'), ''),
+      _amountController.text.replaceAll('.', '').replaceAll(',', '.'),
     );
     final rate = double.tryParse(_rateController.text);
     final rawTerm = int.tryParse(_termController.text);
@@ -335,7 +335,7 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
             controller: _amountController,
             keyboardType: TextInputType.number,
             inputFormatters: [CurrencyInputFormatter()],
-            style: Theme.of(context).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w800) ?? const TextStyle(fontSize: 28, fontWeight: FontWeight.w800),
+            style: Theme.of(context).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w800, color: AppTheme.textPrimary) ?? TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: AppTheme.textPrimary),
             decoration: InputDecoration(
               labelText: 'Loan Amount',
               prefixIcon: const Icon(Icons.payments_rounded),
@@ -473,7 +473,7 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
     final settings = Provider.of<SettingsProvider>(context);
     final symbol = settings.currencySymbol;
     final amount = double.tryParse(
-      _amountController.text.replaceAll(RegExp(r'[^\d.]'), ''),
+      _amountController.text.replaceAll('.', '').replaceAll(',', '.'),
     );
     final rate = double.tryParse(_rateController.text);
     final rawTerm = int.tryParse(_termController.text);
@@ -529,6 +529,10 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
                   const SizedBox(height: 8),
                   Divider(color: Colors.white.withValues(alpha: 0.2)),
                   const SizedBox(height: 8),
+                  _reviewRow('Total Interest', 
+                      formatCurrency((monthly * termMonths) - (amount ?? 0), symbol: symbol)),
+                  _reviewRow('Total Debt',
+                      formatCurrency(monthly * termMonths, symbol: symbol), isBold: true),
                   _reviewRow('Est. Monthly',
                       formatCurrency(monthly, symbol: symbol), isBold: true),
                 ],

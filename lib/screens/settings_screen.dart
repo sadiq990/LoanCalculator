@@ -7,6 +7,9 @@ import '../core/widgets/app_scaffold.dart';
 import '../core/widgets/animated_card.dart';
 import '../providers/settings_provider.dart';
 import '../services/auth_service.dart';
+import '../services/storage_service.dart';
+import '../models/loan.dart';
+import '../core/constants/loan_icons.dart';
 import 'privacy_policy_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -200,46 +203,124 @@ class SettingsScreen extends StatelessWidget {
   }
 
   Widget _buildReminderSelector(BuildContext context, SettingsProvider settings) {
-    final time = settings.reminderTime;
-    final hour = time.hour > 12 ? time.hour - 12 : (time.hour == 0 ? 12 : time.hour);
-    final minute = time.minute.toString().padLeft(2, '0');
-    final period = time.hour >= 12 ? 'PM' : 'AM';
-    final formattedTime = '$hour:$minute $period';
+    final storage = Provider.of<StorageService>(context, listen: false);
 
-    return AnimatedCard(
-      child: ListTile(
-        leading: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                AppTheme.warning.withValues(alpha: 0.2),
-                AppTheme.warning.withValues(alpha: 0.05),
-              ],
+    return FutureBuilder<List<Loan>>(
+      future: storage.getLoans(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const SizedBox.shrink();
+        
+        final activeLoans = snapshot.data!.where((l) => !l.isPaidOff).toList();
+        if (activeLoans.isEmpty) {
+          return AnimatedCard(
+            child: ListTile(
+              leading: Icon(Icons.notifications_off_rounded, color: AppTheme.textLight),
+              title: Text('No active loans for reminders', style: TextStyle(color: AppTheme.textLight)),
             ),
-            borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+          );
+        }
+
+        return AnimatedCard(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: Text('Loan Reminders', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppTheme.textSecondary)),
+              ),
+              ...activeLoans.map((loan) {
+                final days = settings.loanReminderDays[loan.id];
+                final isEnabled = days != null;
+                
+                return Column(
+                  children: [
+                    if (activeLoans.indexOf(loan) > 0)
+                      Divider(height: 1, indent: 16, endIndent: 16, color: AppTheme.divider),
+                    ListTile(
+                      leading: buildGradientIcon(loan.iconId, size: 32),
+                      title: Text(loan.name, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: AppTheme.textPrimary)),
+                      subtitle: isEnabled 
+                        ? Text('Remind $days days before', style: TextStyle(fontSize: 12, color: AppTheme.primary)) 
+                        : Text('Off', style: TextStyle(fontSize: 12, color: AppTheme.textLight)),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (isEnabled)
+                            IconButton(
+                              icon: const Icon(Icons.edit_calendar_rounded, size: 20),
+                              color: AppTheme.primary,
+                              onPressed: () async {
+                                final result = await _pickReminderDays(context, days);
+                                if (result != null) {
+                                  settings.setReminderDays(loan.id, result);
+                                }
+                              },
+                            ),
+                          Switch.adaptive(
+                            value: isEnabled,
+                            activeColor: AppTheme.primary,
+                            onChanged: (val) {
+                              if (val) {
+                                settings.setReminderDays(loan.id, 5); // default 5
+                              } else {
+                                settings.removeReminder(loan.id);
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              }),
+            ],
           ),
-          child: const Icon(Icons.notifications_active_rounded,
-              color: AppTheme.warning, size: 20),
-        ),
-        title: const Text('Daily Reminder',
-            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-        subtitle: Text('When to verify payments',
-            style: TextStyle(fontSize: 12, color: AppTheme.textLight)),
-        trailing: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: AppTheme.surfaceLight,
-            borderRadius: BorderRadius.circular(AppTheme.radiusFull),
-            border: Border.all(color: AppTheme.divider),
+        );
+      },
+    );
+  }
+
+  Future<int?> _pickReminderDays(BuildContext context, int currentDays) {
+    int selected = currentDays;
+    return showDialog<int>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          title: Text('Days Before Payment', style: TextStyle(color: AppTheme.textPrimary)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('$selected days', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+              SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  activeTrackColor: AppTheme.primary,
+                  inactiveTrackColor: AppTheme.surfaceLight,
+                  thumbColor: AppTheme.primary,
+                  trackHeight: 4,
+                ),
+                child: Slider(
+                  value: selected.toDouble(),
+                  min: 1,
+                  max: 14,
+                  divisions: 13,
+                  onChanged: (v) => setState(() => selected = v.toInt()),
+                ),
+              ),
+            ],
           ),
-          child: Text(formattedTime,
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context), 
+              child: Text('Cancel', style: TextStyle(color: AppTheme.textLight))
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, selected), 
+              child: const Text('Save', style: TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold))
+            ),
+          ],
         ),
-        onTap: () async {
-          final newTime = await showTimePicker(context: context, initialTime: time);
-          if (newTime != null) settings.setReminderTime(newTime);
-        },
       ),
     );
   }
@@ -267,7 +348,7 @@ class SettingsScreen extends StatelessWidget {
             style: TextStyle(fontSize: 12, color: AppTheme.textLight)),
         trailing: Switch.adaptive(
           value: settings.biometricEnabled,
-          activeTrackColor: AppTheme.primary,
+          activeColor: AppTheme.primary,
           onChanged: (value) async {
             HapticFeedback.selectionClick();
             if (value) {

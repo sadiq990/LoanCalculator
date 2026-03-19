@@ -126,7 +126,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                                 return Transform.scale(
                                   scale: val,
                                   child: Opacity(
-                                    opacity: val,
+                                    opacity: val.clamp(0.0, 1.0),
                                     child: _AnimatedPulseIcon(
                                       icon: page.icon,
                                       color: page.color,
