@@ -14,7 +14,10 @@ Designed with **iOS-first aesthetics**, the app features a stunning Glassmorphis
 
 - **🚀 Elegant Onboarding**: A seamless, animated introduction to the app's core value propositions.
 - **📊 Advanced Analytics**: High-quality charts (using `fl_chart`) to visualize debt reduction and payment progress.
-- **📑 PDF Reports**: Professional amortization schedules and loan summaries exported as high-quality PDFs.
+- **📉 Interest Saving Logic**: Smart calculations that reflect real-time interest savings when you make extra payments, dropping your "Total Debt" exponentially.
+- **🗓️ Smart Amortization**: Rebuilt amortization engine with chronological 1:1 payment mapping (no skipped months).
+- **🔄 Payoff Strategies**: Toggle between *Reduce Term* and *Reduce Payment* strategies on-the-fly to see how extra payments affect your future.
+- **📑 PDF Reports**: Professional amortization schedules and loan summaries exported as high-quality PDFs, including paid/unpaid status indicators.
 - **🛡️ Biometric Security**: Secure your financial data with FaceID or Fingerprint authentication.
 - **🌗 Full Dark Mode**: A meticulously crafted dark theme that looks stunning on OLED screens.
 - **💰 Multi-Currency Support**: Default to USD ($) with global configuration options.

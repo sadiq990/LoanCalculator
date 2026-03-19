@@ -4,6 +4,8 @@ import 'payment.dart';
 import 'amortization_entry.dart';
 import 'dart:math' as math;
 
+enum ExtraPaymentMode { reduceTerm, reducePayment }
+
 /// Represents a loan with various calculation methods
 class Loan {
   final String id;
@@ -16,6 +18,7 @@ class Loan {
   final int paymentDay;
   final DateTime createdAt;
   final List<Payment> payments;
+  final ExtraPaymentMode extraPaymentMode;
 
   Loan({
     required this.id,
@@ -26,6 +29,7 @@ class Loan {
     required this.paymentDay,
     required this.createdAt,
     this.iconId = 'default',
+    this.extraPaymentMode = ExtraPaymentMode.reduceTerm,
     List<Payment>? payments,
   }) : payments = payments ?? [] {
     // Calculate standard monthly payment using Decimal for precision
@@ -53,6 +57,7 @@ class Loan {
     int? paymentDay,
     DateTime? createdAt,
     String? iconId,
+    ExtraPaymentMode? extraPaymentMode,
     List<Payment>? payments,
   }) {
     return Loan(
@@ -64,6 +69,7 @@ class Loan {
       paymentDay: paymentDay ?? this.paymentDay,
       createdAt: createdAt ?? this.createdAt,
       iconId: iconId ?? this.iconId,
+      extraPaymentMode: extraPaymentMode ?? this.extraPaymentMode,
       payments: payments ?? List.from(this.payments),
     );
   }
@@ -71,12 +77,12 @@ class Loan {
   /// Total amount to be paid over the life of the loan (Principal + Interest)
   double get totalContractValue => monthlyRequired * termMonths;
 
-  /// Remaining amount of the total contract value
+  /// Remaining amount of the total contract value (Principal + Projected Future Interest)
   double get totalRemaining {
-    final dTotalValue = Decimal.parse(totalContractValue.toStringAsFixed(10));
-    final dTotalPaid = Decimal.parse(totalPaid.toStringAsFixed(10));
-    final val = (dTotalValue - dTotalPaid).toDouble();
-    return val < 0 ? 0 : val;
+    if (remainingDebt <= 0.01) return 0;
+    final sim = simulatePayoff();
+    final dRemaining = Decimal.parse(remainingDebt.toStringAsFixed(10)) + Decimal.parse(sim.totalInterest.toStringAsFixed(10));
+    return dRemaining.toDouble();
   }
 
   /// Current Principal Balance (approximate for typical scenarios)
@@ -123,19 +129,26 @@ class Loan {
 
   double get totalPaid => payments.fold(0.0, (sum, p) => sum + p.amount);
 
-  /// Progress based on Total Repayment (Principal + Interest)
+  /// Progress based on Current Expected Total Cost
   double get progress {
-    if (totalContractValue <= 0) return 0;
-    return (Decimal.parse(totalPaid.toStringAsFixed(10)) / Decimal.parse(totalContractValue.toStringAsFixed(10))).toDouble();
+    if (remainingDebt <= 0.01) return 1.0;
+    final totalSpentSoFar = totalPaid;
+    final futureInterest = simulatePayoff().totalInterest;
+    final totalProjectedCost = totalSpentSoFar + remainingDebt + futureInterest;
+    
+    if (totalProjectedCost <= 0) return 1.0;
+    return (totalSpentSoFar / totalProjectedCost).clamp(0.0, 1.0);
   }
 
   /// Calculate original amortization schedule (combining history + future)
   List<AmortizationEntry> getOriginalAmortizationSchedule({
     double extraMonthlyPayment = 0,
+    ExtraPaymentMode? overrideMode,
   }) {
     final List<AmortizationEntry> schedule = [];
     Decimal currentBalance = Decimal.parse(totalAmount.toString());
     DateTime currentDate = createdAt;
+    final activeMode = overrideMode ?? extraPaymentMode;
 
     if (currentBalance <= Decimal.zero || monthlyRequired <= 0) return [];
 
@@ -174,7 +187,24 @@ class Loan {
         }
       } else {
         // Future Projected Payment
-        Decimal requiredPayment = Decimal.parse(monthlyRequired.toString());
+        Decimal requiredPayment;
+        if (activeMode == ExtraPaymentMode.reducePayment) {
+          int remainingTerm = termMonths - month + 1;
+          if (remainingTerm > 0) {
+            if (interestRate <= 0) {
+              requiredPayment = (currentBalance.toRational() / Rational.fromInt(remainingTerm)).toDecimal(scaleOnInfinitePrecision: 10);
+            } else {
+              final r = dMonthlyRate.toDouble();
+              final factor = math.pow(1 + r, remainingTerm).toDouble();
+              final req = (currentBalance.toDouble() * r * factor / (factor - 1));
+              requiredPayment = Decimal.parse(req.toStringAsFixed(10));
+            }
+          } else {
+            requiredPayment = currentBalance;
+          }
+        } else {
+          requiredPayment = Decimal.parse(monthlyRequired.toString());
+        }
 
         totalPayment = requiredPayment + dExtra;
         if (totalPayment > currentBalance + interestPayment) {
@@ -252,6 +282,7 @@ class Loan {
       'paymentDay': paymentDay,
       'createdAt': createdAt.toIso8601String(),
       'iconId': iconId,
+      'extraPaymentMode': extraPaymentMode.name,
       'payments': payments.map((e) => e.toJson()).toList(),
     };
   }
@@ -266,9 +297,12 @@ class Loan {
       paymentDay: json['paymentDay'] as int,
       createdAt: DateTime.parse(json['createdAt'] as String),
       iconId: json['iconId'] as String? ?? 'default',
+      extraPaymentMode: json['extraPaymentMode'] == 'reducePayment' 
+          ? ExtraPaymentMode.reducePayment 
+          : ExtraPaymentMode.reduceTerm,
       payments: (json['payments'] as List<dynamic>?)
           ?.map((e) => Payment.fromJson(e as Map<String, dynamic>))
-              .toList() ??
+          .toList() ??
           [],
     );
   }

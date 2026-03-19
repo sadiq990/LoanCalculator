@@ -505,9 +505,76 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
             Expanded(child: _infoItem('Monthly',
                 formatCurrency(loan.monthlyRequired, symbol: settings.currencySymbol))),
           ]),
+          const SizedBox(height: AppTheme.spacing16),
+          Text('Extra Payment Strategy',
+              style: TextStyle(fontSize: 12, color: AppTheme.textLight)),
+          const SizedBox(height: AppTheme.spacing8),
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () {
+                    if (loan.extraPaymentMode != ExtraPaymentMode.reduceTerm) {
+                      _updateExtraPaymentMode(ExtraPaymentMode.reduceTerm);
+                    }
+                  },
+                  child: AnimatedContainer(
+                    duration: AppTheme.animFast,
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: BoxDecoration(
+                      color: loan.extraPaymentMode == ExtraPaymentMode.reduceTerm ? AppTheme.primary : AppTheme.surfaceLight,
+                      borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                      border: Border.all(color: loan.extraPaymentMode == ExtraPaymentMode.reduceTerm ? Colors.transparent : AppTheme.divider),
+                    ),
+                    child: Center(
+                      child: Text('Reduce Term', 
+                          style: TextStyle(fontSize: 12, color: loan.extraPaymentMode == ExtraPaymentMode.reduceTerm ? Colors.white : AppTheme.primary, fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () {
+                    if (loan.extraPaymentMode != ExtraPaymentMode.reducePayment) {
+                      _updateExtraPaymentMode(ExtraPaymentMode.reducePayment);
+                    }
+                  },
+                  child: AnimatedContainer(
+                    duration: AppTheme.animFast,
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: BoxDecoration(
+                      color: loan.extraPaymentMode == ExtraPaymentMode.reducePayment ? AppTheme.primary : AppTheme.surfaceLight,
+                      borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                      border: Border.all(color: loan.extraPaymentMode == ExtraPaymentMode.reducePayment ? Colors.transparent : AppTheme.divider),
+                    ),
+                    child: Center(
+                      child: Text('Reduce Payment', 
+                          style: TextStyle(fontSize: 12, color: loan.extraPaymentMode == ExtraPaymentMode.reducePayment ? Colors.white : AppTheme.primary, fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _updateExtraPaymentMode(ExtraPaymentMode mode) async {
+    try {
+      final storage = Provider.of<StorageService>(context, listen: false);
+      final loans = await storage.getLoans();
+      final currentLoan = loans.firstWhere((l) => l.id == widget.loanId);
+      final updatedLoan = currentLoan.copyWith(extraPaymentMode: mode);
+      await storage.updateLoan(updatedLoan);
+      setState(() {});
+      HapticFeedback.selectionClick();
+    } catch (e) {
+      debugPrint('Error updating mode: $e');
+    }
   }
 
   Widget _infoItem(String label, String value) {
