@@ -27,18 +27,7 @@ class SettingsProvider extends ChangeNotifier {
   bool get isLoaded => _isLoaded;
 
   SettingsProvider() {
-    _loadSettings();
-  }
-
-  /// Private factory pattern to ensure async initialization
-  static Future<SettingsProvider> create() async {
-    final provider = SettingsProvider();
-    await provider._loadSettingsAsync();
-    return provider;
-  }
-
-  Future<void> _loadSettings() async {
-    await _loadSettingsAsync();
+    _loadSettingsAsync();
   }
 
   /// Public method to load settings from SharedPreferences

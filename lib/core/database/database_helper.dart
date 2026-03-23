@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 import '../../models/loan.dart';
 import '../../models/payment.dart';
 
+export '../../models/loan.dart' show ExtraPaymentMode;
+
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
 
@@ -165,6 +167,7 @@ class LoanAdapter extends TypeAdapter<Loan> {
   @override
   Loan read(BinaryReader reader) {
     final paymentsList = reader.readList();
+    final extraPaymentModeStr = reader.readString();
     return Loan(
       id: reader.readString(),
       name: reader.readString(),
@@ -175,6 +178,9 @@ class LoanAdapter extends TypeAdapter<Loan> {
       createdAt: DateTime.parse(reader.readString()),
       payments: List<Payment>.from(paymentsList),
       iconId: reader.readString(),
+      extraPaymentMode: extraPaymentModeStr == 'reducePayment'
+          ? ExtraPaymentMode.reducePayment
+          : ExtraPaymentMode.reduceTerm,
     );
   }
 
@@ -189,6 +195,7 @@ class LoanAdapter extends TypeAdapter<Loan> {
     writer.writeString(obj.createdAt.toIso8601String());
     writer.writeList(obj.payments);
     writer.writeString(obj.iconId);
+    writer.writeString(obj.extraPaymentMode.name);
   }
 }
 

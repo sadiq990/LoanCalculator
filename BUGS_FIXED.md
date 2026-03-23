@@ -6,7 +6,7 @@ Your app was frozen on the splash screen showing a loading spinner because of **
 
 ---
 
-## Critical Bugs Fixed
+## Critical Bugs Fixed (v2.0 - March 2024)
 
 ### 1. ❌ StorageService Never Initialized (PRIMARY BUG)
 **File**: `lib/main.dart`
@@ -29,7 +29,7 @@ await storageService.init();  // NOW properly initialized
 ### 2. ❌ Multiple Uninitialized StorageService Instances in Every Screen
 **Files**:
 - `lib/screens/home_screen.dart`
-- `lib/screens/dashboard_screen.dart` 
+- `lib/screens/dashboard_screen.dart`
 - `lib/screens/loan_detail_screen.dart`
 - `lib/screens/add_loan_screen.dart`
 - `lib/screens/payoff_simulator_screen.dart`
@@ -87,6 +87,119 @@ Provider<StorageService>.value(value: storageService),  // Single shared instanc
 
 ---
 
+## NEW: Additional Bugs Fixed (v2.1 - March 2024)
+
+### 5. 🔴 CRITICAL: Hive Adapter Missing extraPaymentMode Field
+**File**: `lib/core/database/database_helper.dart`
+
+**Problem**:
+The `LoanAdapter` was NOT saving/restoring the `extraPaymentMode` field. Users could select "Reduce Term" or "Reduce Payment" strategies, but this setting would **LOSE** after app restart!
+
+```dart
+// BUG: LoanAdapter.write() was missing extraPaymentMode
+void write(BinaryWriter writer, Loan obj) {
+  writer.writeString(obj.id);
+  // ... other fields
+  writer.writeString(obj.iconId);
+  // ❌ MISSING: writer.writeString(obj.extraPaymentMode.name);
+}
+
+// BUG: LoanAdapter.read() was missing extraPaymentMode
+Loan read(BinaryReader reader) {
+  // ... reads all fields
+  return Loan(
+    iconId: reader.readString(),
+    // ❌ MISSING: extraPaymentMode field!
+  );
+}
+```
+
+**Fixed**:
+```dart
+@override
+void write(BinaryWriter writer, Loan obj) {
+  writer.writeString(obj.id);
+  writer.writeString(obj.name);
+  writer.writeDouble(obj.totalAmount);
+  writer.writeDouble(obj.interestRate);
+  writer.writeInt(obj.termMonths);
+  writer.writeInt(obj.paymentDay);
+  writer.writeString(obj.createdAt.toIso8601String());
+  writer.writeList(obj.payments);
+  writer.writeString(obj.iconId);
+  writer.writeString(obj.extraPaymentMode.name);  // ✅ NOW SAVED!
+}
+
+@override
+Loan read(BinaryReader reader) {
+  final paymentsList = reader.readList();
+  final extraPaymentModeStr = reader.readString();  // ✅ NOW READ!
+  return Loan(
+    id: reader.readString(),
+    // ... other fields
+    extraPaymentMode: extraPaymentModeStr == 'reducePayment'
+        ? ExtraPaymentMode.reducePayment
+        : ExtraPaymentMode.reduceTerm,
+  );
+}
+```
+
+**Impact**: HIGH - Users' loan payment strategy preferences are now persisted correctly.
+
+---
+
+### 6. 🟡 MEDIUM: Duplicate Async Loading in SettingsProvider
+**File**: `lib/providers/settings_provider.dart`
+
+**Problem**:
+`_loadSettingsAsync()` was called **twice** - once in constructor and once in `loadSettingsAsync()`:
+
+```dart
+SettingsProvider() {
+  _loadSettings();  // Calls _loadSettingsAsync() - FIRST CALL
+}
+
+Future<void> _loadSettings() async {
+  await _loadSettingsAsync();  // Calls _loadSettingsAsync() - SECOND CALL
+}
+
+Future<void> loadSettingsAsync() async {
+  await _loadSettingsAsync();  // Calls _loadSettingsAsync() - THIRD CALL!
+}
+```
+
+**Fixed**:
+```dart
+SettingsProvider() {
+  _loadSettingsAsync();  // Single call
+}
+
+Future<void> loadSettingsAsync() async {
+  await _loadSettingsAsync();  // Single entry point
+}
+```
+
+---
+
+### 7. 🟡 MEDIUM: Unused Factory Method
+**File**: `lib/providers/settings_provider.dart`
+
+**Problem**:
+```dart
+/// Private factory pattern to ensure async initialization
+static Future<SettingsProvider> create() async {
+  final provider = SettingsProvider();
+  await provider._loadSettingsAsync();
+  return provider;
+}
+```
+
+This factory method was **never used** anywhere in the codebase! Removed to reduce code complexity.
+
+**Fixed**: Removed unused factory method.
+
+---
+
 ## What Changed
 
 ### main.dart - Complete Rewrite
@@ -101,7 +214,7 @@ void main() async {
     // Create and properly initialize services
     final settingsProvider = SettingsProvider();
     final storageService = StorageService();
-    
+
     // WAIT for both to be ready
     await Future.wait([
       settingsProvider.loadSettingsAsync(),
@@ -133,6 +246,8 @@ void main() async {
 1. ✂️ Removed all `final StorageService _storage = StorageService();` from screens
 2. ✂️ Removed unnecessary `static Future<SettingsProvider> create()` factory method
 3. ✂️ Removed ProxyProvider for StorageService
+4. ✂️ Removed duplicate `_loadSettings()` method
+5. ✂️ Removed `_loadSettingsAsync()` duplicate call in constructor
 
 ---
 
@@ -144,6 +259,8 @@ void main() async {
 ✅ **Database properly initialized**
 ✅ **All screens share single StorageService instance**
 ✅ **No compile errors**
+✅ **extraPaymentMode now persists after restart**
+✅ **Settings load only once (no duplicate async calls)**
 
 ---
 
@@ -153,6 +270,7 @@ void main() async {
 2. App should immediately show onboarding or home screen (no spinner)
 3. Loans should load properly
 4. Add/edit/delete loans should work
+5. **NEW**: Select "Reduce Term" or "Reduce Payment" strategy, restart app - should persist!
 
 ---
 
@@ -165,3 +283,10 @@ The app design had a fundamental flaw: **async initialization wasn't being await
 - Indefinite wait on the loading spinner
 
 **Fix**: Ensure all critical services are initialized before `runApp()` is called.
+
+### Additional Issues Found in v2.1:
+- **Hive Adapter Bug**: Critical missing field in TypeAdapter prevented data persistence
+- **Duplicate Loading**: Async methods were called multiple times unnecessarily
+- **Dead Code**: Factory pattern was implemented but never used
+
+**Fix**: Always ensure data models match their persistence adapters completely.
