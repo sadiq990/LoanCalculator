@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import '../core/theme/app_theme.dart';
 import '../services/auth_service.dart';
+import '../providers/settings_provider.dart';
+import 'pin_entry_screen.dart';
 
 class LockScreen extends StatefulWidget {
   final VoidCallback onUnlock;
@@ -15,13 +18,15 @@ class _LockScreenState extends State<LockScreen> with SingleTickerProviderStateM
   final AuthService _auth = AuthService();
   late AnimationController _pulseController;
   late Animation<double> _pulseScale;
+  bool _showPinEntry = false;
+  bool _biometricFailed = false;
 
   @override
   void initState() {
     super.initState();
     _pulseController = AnimationController(vsync: this, duration: const Duration(seconds: 2))..repeat(reverse: true);
     _pulseScale = Tween<double>(begin: 1.0, end: 1.1).animate(CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut));
-    
+
     // Auto-authenticate on load
     WidgetsBinding.instance.addPostFrameCallback((_) => _authenticate());
   }
@@ -37,11 +42,33 @@ class _LockScreenState extends State<LockScreen> with SingleTickerProviderStateM
     if (success) {
       HapticFeedback.mediumImpact();
       widget.onUnlock();
+    } else {
+      // Biometric failed - show PIN option
+      final settings = Provider.of<SettingsProvider>(context, listen: false);
+      if (settings.pin != null) {
+        setState(() {
+          _biometricFailed = true;
+          _showPinEntry = true;
+        });
+      }
     }
+  }
+
+  void _onPinSuccess() {
+    HapticFeedback.mediumImpact();
+    widget.onUnlock();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_showPinEntry) {
+      final settings = Provider.of<SettingsProvider>(context, listen: false);
+      return PinEntryScreen(
+        onSuccess: _onPinSuccess,
+        storedPin: settings.pin,
+      );
+    }
+
     return Scaffold(
       backgroundColor: AppTheme.background,
       body: Container(
@@ -92,7 +119,9 @@ class _LockScreenState extends State<LockScreen> with SingleTickerProviderStateM
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 40),
                 child: Text(
-                  'Verify your identity to access your loan statistics and payment history.',
+                  _biometricFailed
+                      ? 'Biometric authentication failed. Please use your PIN or try again.'
+                      : 'Verify your identity to access your loan statistics and payment history.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 15,
@@ -106,16 +135,38 @@ class _LockScreenState extends State<LockScreen> with SingleTickerProviderStateM
                 padding: const EdgeInsets.all(40),
                 child: Column(
                   children: [
+                    // Biometric button
                     SizedBox(
                       width: double.infinity,
                       height: 56,
                       child: FilledButton.icon(
                         onPressed: _authenticate,
                         icon: const Icon(Icons.fingerprint_rounded),
-                        label: const Text('Unlock with Biometrics'),
+                        label: Text(_biometricFailed ? 'Try Again' : 'Unlock with Biometrics'),
                       ),
                     ),
                     const SizedBox(height: 16),
+                    // PIN fallback button
+                    Consumer<SettingsProvider>(
+                      builder: (context, settings, _) {
+                        if (settings.pin == null) return const SizedBox.shrink();
+                        return Column(
+                          children: [
+                            TextButton.icon(
+                              onPressed: () {
+                                setState(() => _showPinEntry = true);
+                              },
+                              icon: const Icon(Icons.pin_rounded, size: 20),
+                              label: const Text('Use PIN Instead'),
+                              style: TextButton.styleFrom(
+                                foregroundColor: AppTheme.textSecondary,
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 8),
                     Text(
                       'Protected by system biometrics',
                       style: TextStyle(

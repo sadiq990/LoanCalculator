@@ -11,6 +11,8 @@ import '../services/storage_service.dart';
 import '../models/loan.dart';
 import '../core/constants/loan_icons.dart';
 import 'privacy_policy_screen.dart';
+import 'terms_of_service_screen.dart';
+import 'pin_entry_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -328,45 +330,127 @@ class SettingsScreen extends StatelessWidget {
   Widget _buildBiometricToggle(BuildContext context, SettingsProvider settings) {
     final authService = AuthService();
     return AnimatedCard(
-      child: ListTile(
-        leading: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                AppTheme.success.withValues(alpha: 0.2),
-                AppTheme.success.withValues(alpha: 0.05),
-              ],
+      child: Column(
+        children: [
+          // Biometric Toggle
+          ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    AppTheme.success.withValues(alpha: 0.2),
+                    AppTheme.success.withValues(alpha: 0.05),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+              ),
+              child: const Icon(Icons.fingerprint_rounded, color: AppTheme.success, size: 20),
             ),
-            borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+            title: const Text('Biometric Unlock',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+            subtitle: Text('Use FaceID/TouchID to open app',
+                style: TextStyle(fontSize: 12, color: AppTheme.textLight)),
+            trailing: Switch.adaptive(
+              value: settings.biometricEnabled,
+              activeColor: AppTheme.primary,
+              onChanged: (value) async {
+                HapticFeedback.selectionClick();
+                if (value) {
+                  final isAvailable = await authService.isAvailable;
+                  if (!context.mounted) return;
+                  if (!isAvailable) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Biometric authentication is not available on this device.'),
+                        backgroundColor: AppTheme.error,
+                      ),
+                    );
+                    return;
+                  }
+                  // If enabling and no PIN set, prompt to create PIN
+                  if (settings.pin == null) {
+                    final bool? pinCreated = await Navigator.of(context).push<bool>(
+                      MaterialPageRoute(
+                        builder: (_) => PinEntryScreen(
+                          onSuccess: () => Navigator.pop(context, true),
+                          isSetupMode: true,
+                          onPinSet: (pin) => settings.setPin(pin),
+                        ),
+                      ),
+                    );
+                    if (pinCreated != true) return;
+                  }
+                }
+                await settings.setBiometricEnabled(value);
+              },
+            ),
           ),
-          child: const Icon(Icons.fingerprint_rounded, color: AppTheme.success, size: 20),
-        ),
-        title: const Text('Biometric Unlock',
-            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-        subtitle: Text('Use FaceID/TouchID to open app',
-            style: TextStyle(fontSize: 12, color: AppTheme.textLight)),
-        trailing: Switch.adaptive(
-          value: settings.biometricEnabled,
-          activeColor: AppTheme.primary,
-          onChanged: (value) async {
-            HapticFeedback.selectionClick();
-            if (value) {
-              final isAvailable = await authService.isAvailable;
-              if (!context.mounted) return;
-              if (!isAvailable) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Biometric authentication is not available.'),
-                    backgroundColor: AppTheme.error,
-                  ),
-                );
-                return;
-              }
-            }
-            await settings.setBiometricEnabled(value);
-          },
-        ),
+          // PIN Setup (only show if biometrics enabled and PIN exists)
+          if (settings.biometricEnabled) ...[
+            Divider(height: 1, indent: 16, endIndent: 16, color: AppTheme.divider),
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppTheme.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                ),
+                child: const Icon(Icons.pin_rounded, color: AppTheme.primary, size: 20),
+              ),
+              title: const Text('Backup PIN',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+              subtitle: Text(
+                settings.pin != null ? 'PIN is set' : 'Set a backup PIN',
+                style: TextStyle(fontSize: 12, color: AppTheme.textLight),
+              ),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (settings.pin != null)
+                    TextButton(
+                      onPressed: () async {
+                        final bool? resetPin = await Navigator.of(context).push<bool>(
+                          MaterialPageRoute(
+                            builder: (_) => PinEntryScreen(
+                              onSuccess: () => Navigator.pop(context, true),
+                              isSetupMode: true,
+                              onPinSet: (pin) => settings.setPin(pin),
+                            ),
+                          ),
+                        );
+                        if (resetPin == true) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('PIN updated successfully'),
+                                backgroundColor: AppTheme.success,
+                              ),
+                            );
+                          }
+                        }
+                      },
+                      child: const Text('Change'),
+                    ),
+                  Icon(Icons.chevron_right_rounded, color: AppTheme.textLight),
+                ],
+              ),
+              onTap: () async {
+                if (settings.pin == null) {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => PinEntryScreen(
+                        onSuccess: () => Navigator.pop(context),
+                        isSetupMode: true,
+                        onPinSet: (pin) => settings.setPin(pin),
+                      ),
+                    ),
+                  );
+                }
+              },
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -413,6 +497,18 @@ class SettingsScreen extends StatelessWidget {
             onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PrivacyPolicyScreen())),
             child: Text(
               'Privacy Policy',
+              style: TextStyle(
+                color: AppTheme.primary,
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          TextButton(
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TermsOfServiceScreen())),
+            child: Text(
+              'Terms of Service',
               style: TextStyle(
                 color: AppTheme.primary,
                 fontWeight: FontWeight.w600,
