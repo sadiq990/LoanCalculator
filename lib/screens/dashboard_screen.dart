@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import '../core/theme/app_theme.dart';
 import '../core/widgets/app_scaffold.dart';
 import '../core/widgets/glass_card.dart';
@@ -83,126 +84,142 @@ class _DashboardScreenState extends State<DashboardScreen>
       }
     }
 
+    final listItems = [
+      // Title
+      Text(
+        'Statistics',
+        style: TextStyle(
+          fontSize: 28,
+          fontWeight: FontWeight.w800,
+          letterSpacing: -0.5,
+          color: AppTheme.textPrimary,
+        ),
+      ),
+      const SizedBox(height: 20),
+
+      // Summary header card
+      _buildSummaryCard(totalDebt, totalPaid, symbol),
+      const SizedBox(height: 16),
+
+      // 3 stat cards row
+      _buildStatCards(totalPrincipal, totalInterest, activeLoans.length, symbol),
+      const SizedBox(height: 24),
+
+      // Donut chart section
+      if (totalProjected > 0) ...[
+        Text(
+          'Debt Breakdown',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            color: AppTheme.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 16),
+        _buildDonutChart(totalPrincipal, totalInterest, symbol),
+        const SizedBox(height: 24),
+      ],
+
+      // Per-loan breakdown
+      if (activeLoans.isNotEmpty) ...[
+        Text(
+          'By Loan',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            color: AppTheme.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 12),
+        ...activeLoans.map((l) => _buildLoanBar(l, totalDebt, symbol)),
+        const SizedBox(height: 24),
+      ],
+
+      // Debt Free date
+      GlassCard(
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppTheme.success.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+              ),
+              child: Icon(Icons.event_available_rounded, color: AppTheme.success),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Estimated Debt Free',
+                      style: TextStyle(fontSize: 13, color: AppTheme.textLight)),
+                  const SizedBox(height: 2),
+                  Text(
+                    debtFreeText,
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 12),
+
+      // Payoff Simulator
+      GlassCard(
+        variant: GlassCardVariant.accent,
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const PayoffSimulatorScreen()),
+          );
+        },
+        child: Row(
+          children: [
+            const Icon(Icons.speed_rounded, color: Colors.white, size: 28),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Payoff Simulator',
+                      style: TextStyle(
+                          color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
+                  Text('See how extra payments save you money',
+                      style: TextStyle(color: Colors.white70, fontSize: 13)),
+                ],
+              ),
+            ),
+            const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white70, size: 16),
+          ],
+        ),
+      ),
+    ];
+
     return AppScaffold(
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
-        children: [
-          // Title
-          Text(
-            'Statistics',
-            style: TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.5,
-              color: AppTheme.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          // Summary header card
-          _buildSummaryCard(totalDebt, totalPaid, symbol),
-          const SizedBox(height: 16),
-
-          // 3 stat cards row
-          _buildStatCards(totalPrincipal, totalInterest, activeLoans.length, symbol),
-          const SizedBox(height: 24),
-
-          // Donut chart section
-          if (totalProjected > 0) ...[
-            Text(
-              'Debt Breakdown',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: AppTheme.textPrimary,
+      body: AnimationLimiter(
+        child: ListView.builder(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
+          itemCount: listItems.length,
+          itemBuilder: (context, index) {
+            return AnimationConfiguration.staggeredList(
+              position: index,
+              duration: const Duration(milliseconds: 375),
+              child: SlideAnimation(
+                verticalOffset: 50.0,
+                child: FadeInAnimation(
+                  child: listItems[index],
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            _buildDonutChart(totalPrincipal, totalInterest, symbol),
-            const SizedBox(height: 24),
-          ],
-
-          // Per-loan breakdown
-          if (activeLoans.isNotEmpty) ...[
-            Text(
-              'By Loan',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: AppTheme.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 12),
-            ...activeLoans.map((l) => _buildLoanBar(l, totalDebt, symbol)),
-            const SizedBox(height: 24),
-          ],
-
-          // Debt Free date
-          GlassCard(
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: AppTheme.success.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                  ),
-                  child: Icon(Icons.event_available_rounded, color: AppTheme.success),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Estimated Debt Free',
-                          style: TextStyle(fontSize: 13, color: AppTheme.textLight)),
-                      const SizedBox(height: 2),
-                      Text(
-                        debtFreeText,
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w700,
-                          color: AppTheme.textPrimary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // Payoff Simulator
-          GlassCard(
-            variant: GlassCardVariant.accent,
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const PayoffSimulatorScreen()),
-              );
-            },
-            child: Row(
-              children: [
-                const Icon(Icons.speed_rounded, color: Colors.white, size: 28),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Payoff Simulator',
-                          style: TextStyle(
-                              color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
-                      Text('See how extra payments save you money',
-                          style: TextStyle(color: Colors.white70, fontSize: 13)),
-                    ],
-                  ),
-                ),
-                const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white70, size: 16),
-              ],
-            ),
-          ),
-        ],
+            );
+          },
+        ),
       ),
     );
   }
