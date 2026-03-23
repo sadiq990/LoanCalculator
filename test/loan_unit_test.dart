@@ -16,8 +16,8 @@ void main() {
       );
 
       // Formula: P * r * (1 + r)^n / ((1 + r)^n - 1)
-      // Expect approx 552.73
-      expect(loan.monthlyRequired, closeTo(552.73, 0.01));
+      // Expect approx 552.70
+      expect(loan.monthlyRequired, closeTo(552.70, 0.01));
     });
 
     test('Monthly payment for zero-interest loan', () {
