@@ -6,6 +6,7 @@ import 'core/theme/app_theme.dart';
 import 'providers/settings_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/dashboard_screen.dart';
+import 'screens/analytics_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/lock_screen.dart';
 import 'screens/onboarding_screen.dart';
@@ -92,7 +93,7 @@ class MainShellState extends State<MainShell> {
 
   final _screens = const <Widget>[
     HomeScreen(),
-    DashboardScreen(),
+    AnalyticsScreen(),
     SettingsScreen(),
   ];
 

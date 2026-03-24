@@ -1,13 +1,18 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:path_provider/path_provider.dart';
 import '../core/theme/app_theme.dart';
 import '../core/widgets/app_scaffold.dart';
 import '../core/widgets/animated_card.dart';
 import '../providers/settings_provider.dart';
 import '../services/auth_service.dart';
 import '../services/storage_service.dart';
+import '../services/pdf_service.dart';
+import '../services/csv_export_service.dart';
 import '../models/loan.dart';
 import '../core/constants/loan_icons.dart';
 import 'privacy_policy_screen.dart';
@@ -51,6 +56,10 @@ class SettingsScreen extends StatelessWidget {
             _sectionHeader('SECURITY'),
             _buildBiometricToggle(context, settings),
           ],
+
+          const SizedBox(height: 28),
+          _sectionHeader('DATA EXPORT'),
+          _buildExportSection(context, settings),
 
           const SizedBox(height: 40),
           _buildAboutSection(context),
@@ -527,5 +536,149 @@ class SettingsScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Widget _buildExportSection(BuildContext context, SettingsProvider settings) {
+    return FutureBuilder<List<Loan>>(
+      future: Provider.of<StorageService>(context, listen: false).getLoans(),
+      builder: (context, snapshot) {
+        final hasLoans = snapshot.hasData && snapshot.data!.isNotEmpty;
+
+        return AnimatedCard(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            children: [
+              // Export All Loans PDF
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        AppTheme.error.withValues(alpha: 0.2),
+                        AppTheme.error.withValues(alpha: 0.05),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                  ),
+                  child: const Icon(Icons.picture_as_pdf_rounded, color: AppTheme.error, size: 20),
+                ),
+                title: const Text('Export All Loans (PDF)',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+                subtitle: Text(
+                  hasLoans ? '${snapshot.data!.length} loans' : 'No loans to export',
+                  style: TextStyle(fontSize: 12, color: AppTheme.textLight),
+                ),
+                trailing: Icon(Icons.chevron_right_rounded, color: AppTheme.textLight),
+                enabled: hasLoans,
+                onTap: hasLoans
+                    ? () => _showExportDialog(context, settings, snapshot.data!)
+                    : null,
+              ),
+              Divider(height: 1, indent: 16, endIndent: 16, color: AppTheme.divider),
+              // Export CSV
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        AppTheme.success.withValues(alpha: 0.2),
+                        AppTheme.success.withValues(alpha: 0.05),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                  ),
+                  child: const Icon(Icons.table_chart_rounded, color: AppTheme.success, size: 20),
+                ),
+                title: const Text('Export All Loans (CSV)',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+                subtitle: Text(
+                  'For Excel / Spreadsheets',
+                  style: TextStyle(fontSize: 12, color: AppTheme.textLight),
+                ),
+                trailing: Icon(Icons.chevron_right_rounded, color: AppTheme.textLight),
+                enabled: hasLoans,
+                onTap: hasLoans
+                    ? () => _exportCsv(context, settings, snapshot.data!)
+                    : null,
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showExportDialog(BuildContext context, SettingsProvider settings, List<Loan> loans) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Theme.of(context).cardColor,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusLg)),
+        title: Text(
+          'Export Loans',
+          style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w700),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Select a loan to export:',
+              style: TextStyle(color: AppTheme.textSecondary),
+            ),
+            const SizedBox(height: 16),
+            ...loans.map((loan) => ListTile(
+              title: Text(loan.name),
+              subtitle: Text('${loan.totalAmount.toStringAsFixed(0)} ${settings.currencySymbol}'),
+              onTap: () {
+                Navigator.pop(context);
+                PdfService.generateLoanReport(loan, settings.currencySymbol);
+              },
+            )),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel', style: TextStyle(color: AppTheme.textLight)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _exportCsv(BuildContext context, SettingsProvider settings, List<Loan> loans) async {
+    try {
+      final csvContent = CsvExportService.generateAllLoansCsv(loans, settings.currencySymbol);
+      final fileName = 'loan_tracker_export_${DateTime.now().millisecondsSinceEpoch}';
+
+      String filePath;
+      if (kIsWeb) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Web export coming soon')),
+        );
+        return;
+      } else {
+        final directory = await getTemporaryDirectory();
+        filePath = '${directory.path}/$fileName.csv';
+        final file = File(filePath);
+        await file.writeAsString(csvContent);
+      }
+
+      if (context.mounted) {
+        await Share.shareXFiles(
+          [XFile(filePath)],
+          text: 'Loan Tracker Export',
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Export failed: $e'), backgroundColor: AppTheme.error),
+        );
+      }
+    }
   }
 }
