@@ -38,13 +38,13 @@ class _LockScreenState extends State<LockScreen> with SingleTickerProviderStateM
   }
 
   Future<void> _authenticate() async {
+    final settings = Provider.of<SettingsProvider>(context, listen: false);
     final success = await _auth.authenticate();
     if (success) {
       HapticFeedback.mediumImpact();
       widget.onUnlock();
     } else {
       // Biometric failed - show PIN option
-      final settings = Provider.of<SettingsProvider>(context, listen: false);
       if (settings.pin != null) {
         setState(() {
           _biometricFailed = true;

@@ -53,7 +53,6 @@ class CsvExportService {
   /// Generate CSV for all loans
   static String generateAllLoansCsv(List<Loan> loans, String currencySymbol) {
     final buffer = StringBuffer();
-    final dateFormat = DateFormat('yyyy-MM-dd');
 
     // Header
     buffer.writeln('All Loans Summary');

@@ -792,71 +792,85 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   void _showQuickPaySheet(Loan loan) {
-    final controller = TextEditingController();
     final settings = Provider.of<SettingsProvider>(context, listen: false);
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (context) => SingleChildScrollView(
-        child: Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
-            left: 20,
-            right: 20,
-            top: 24,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppTheme.divider,
-                    borderRadius: BorderRadius.circular(2),
+      builder: (context) {
+        final controller = TextEditingController();
+        return SingleChildScrollView(
+          child: Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom,
+              left: 20,
+              right: 20,
+              top: 24,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppTheme.divider,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 20),
-              Text(
-                'Quick Payment — ${loan.name}',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: controller,
-                keyboardType: TextInputType.number,
-                autofocus: true,
-                decoration: InputDecoration(
-                  hintText: loan.monthlyRequired.toStringAsFixed(0),
-                  suffixText: settings.currencySymbol,
+                const SizedBox(height: 20),
+                Text(
+                  'Quick Payment — ${loan.name}',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
                 ),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: () async {
-                    final amount = double.tryParse(controller.text);
+                const SizedBox(height: 16),
+                TextField(
+                  controller: controller,
+                  keyboardType: TextInputType.number,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: loan.monthlyRequired.toStringAsFixed(0),
+                    suffixText: settings.currencySymbol,
+                  ),
+                  onSubmitted: (value) async {
+                    final amount = double.tryParse(value);
                     if (amount != null && amount > 0) {
                       final storage = Provider.of<StorageService>(context, listen: false);
                       await storage.addPayment(loan.id, Payment.create(amount: amount));
                       if (context.mounted) Navigator.pop(context);
+                      controller.dispose();
                       _loadLoans();
                       HapticFeedback.mediumImpact();
                     }
                   },
-                  child: const Text('Record Payment'),
                 ),
-              ),
-              const SizedBox(height: 20),
-            ],
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: () async {
+                      final amount = double.tryParse(controller.text);
+                      if (amount != null && amount > 0) {
+                        final storage = Provider.of<StorageService>(context, listen: false);
+                        await storage.addPayment(loan.id, Payment.create(amount: amount));
+                        if (context.mounted) Navigator.pop(context);
+                        controller.dispose();
+                        _loadLoans();
+                        HapticFeedback.mediumImpact();
+                      }
+                    },
+                    child: const Text('Record Payment'),
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

@@ -3,6 +3,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
 import '../models/loan.dart';
+import '../models/amortization_entry.dart';
 
 /// Enhanced PDF Service with professional amortization schedule layout
 class PdfService {
@@ -23,6 +24,7 @@ class PdfService {
     final totalInterest = schedule.fold<double>(0, (sum, e) => sum + e.interest);
     final payoffDate = schedule.isNotEmpty ? schedule.last.date : loan.createdAt;
     final simulation = loan.simulatePayoff();
+    final totalPaid = loan.totalPaid;
 
     pdf.addPage(
       pw.MultiPage(
@@ -40,7 +42,7 @@ class PdfService {
           // Summary Statistics
           _buildSectionTitle('SUMMARY'),
           pw.SizedBox(height: 8),
-          _buildSummaryCard(loan, simulation, totalInterest, payoffDate, currencyFormat),
+          _buildSummaryCard(loan, simulation, totalInterest, payoffDate, totalPaid, currencyFormat),
           pw.SizedBox(height: 20),
 
           // Payment Schedule
@@ -210,6 +212,7 @@ class PdfService {
     PayoffSimulation simulation,
     double totalInterest,
     DateTime payoffDate,
+    double totalPaid,
     NumberFormat currencyFormat,
   ) {
     return pw.Container(
@@ -219,13 +222,28 @@ class PdfService {
         borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
         border: pw.Border.all(color: PdfColors.blue100),
       ),
-      child: pw.Row(
+      child: pw.Column(
         children: [
-          _buildSummaryItem('Total Payments', currencyFormat.format(loan.totalContractValue), PdfColors.blue800),
-          pw.Container(width: 1, height: 40, color: PdfColors.blue200),
-          _buildSummaryItem('Total Interest', currencyFormat.format(totalInterest), PdfColors.red600),
-          pw.Container(width: 1, height: 40, color: PdfColors.blue200),
-          _buildSummaryItem('Payoff Date', DateFormat('MMM yyyy').format(payoffDate), PdfColors.green700),
+          pw.Row(
+            children: [
+              _buildSummaryItem('Total Paid', currencyFormat.format(totalPaid), PdfColors.green700),
+              pw.Container(width: 1, height: 40, color: PdfColors.blue200),
+              _buildSummaryItem('Total Due', currencyFormat.format(loan.totalContractValue), PdfColors.blue800),
+              pw.Container(width: 1, height: 40, color: PdfColors.blue200),
+              _buildSummaryItem('Remaining', currencyFormat.format(loan.totalContractValue - totalPaid), PdfColors.orange700),
+            ],
+          ),
+          pw.SizedBox(height: 12),
+          pw.Divider(color: PdfColors.blue200),
+          pw.SizedBox(height: 8),
+          pw.Row(
+            children: [
+              _buildSummaryItem('Total Interest', currencyFormat.format(totalInterest), PdfColors.red600),
+              pw.Container(width: 1, height: 40, color: PdfColors.blue200),
+              _buildSummaryItem('Payoff Date', DateFormat('MMM yyyy').format(payoffDate), PdfColors.green700),
+              pw.Spacer(),
+            ],
+          ),
         ],
       ),
     );
@@ -276,12 +294,13 @@ class PdfService {
           ),
           child: pw.Row(
             children: [
-              _tableHeaderCell('#', 30),
-              _tableHeaderCell('Date', 70),
-              _tableHeaderCell('Payment', 80),
-              _tableHeaderCell('Principal', 80),
-              _tableHeaderCell('Interest', 80),
-              _tableHeaderCell('Balance', 90),
+              _tableHeaderCell('✓', 25),
+              _tableHeaderCell('#', 25),
+              _tableHeaderCell('Date', 60),
+              _tableHeaderCell('Payment', 75),
+              _tableHeaderCell('Principal', 75),
+              _tableHeaderCell('Interest', 75),
+              _tableHeaderCell('Balance', 85),
             ],
           ),
         ),
@@ -305,8 +324,9 @@ class PdfService {
             }
 
             final entry = displaySchedule[index];
-            final bgColor = index % 2 == 0 ? PdfColors.white : PdfColors.grey50;
-            final statusColor = entry.isPaid ? PdfColors.green700 : PdfColors.grey700;
+            final bgColor = entry.isPaid ? PdfColors.green50 : (index % 2 == 0 ? PdfColors.white : PdfColors.grey50);
+            final checkmark = entry.isPaid ? '✓' : '';
+            final checkmarkColor = entry.isPaid ? PdfColors.green700 : PdfColors.grey300;
 
             return pw.Container(
               padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 4),
@@ -316,12 +336,13 @@ class PdfService {
               ),
               child: pw.Row(
                 children: [
-                  _tableCell('${entry.monthIndex}', 30, alignment: pw.Alignment.centerLeft),
-                  _tableCell(monthYearFormat.format(entry.date), 70),
-                  _tableCell(currencyFormat.format(entry.payment), 80),
-                  _tableCell(currencyFormat.format(entry.principal), 80),
-                  _tableCell(currencyFormat.format(entry.interest), 80),
-                  _tableCell(currencyFormat.format(entry.remainingBalance), 90,
+                  _tableCell(checkmark, 25, color: checkmarkColor, isBold: true),
+                  _tableCell('${entry.monthIndex}', 25, alignment: pw.Alignment.centerLeft),
+                  _tableCell(monthYearFormat.format(entry.date), 60),
+                  _tableCell(currencyFormat.format(entry.payment), 75),
+                  _tableCell(currencyFormat.format(entry.principal), 75),
+                  _tableCell(currencyFormat.format(entry.interest), 75),
+                  _tableCell(currencyFormat.format(entry.remainingBalance), 85,
                       color: entry.remainingBalance <= 0 ? PdfColors.green700 : PdfColors.black),
                 ],
               ),
@@ -341,12 +362,13 @@ class PdfService {
             ),
             child: pw.Row(
               children: [
-                _tableCell('', 30),
-                _tableCell('', 70),
-                _tableCell('', 80),
-                _tableCell('', 80),
-                _tableCell('', 80),
-                _tableCell('PAID OFF', 90, isBold: true, color: PdfColors.green700),
+                _tableCell('', 25),
+                _tableCell('', 25),
+                _tableCell('', 60),
+                _tableCell('', 75),
+                _tableCell('', 75),
+                _tableCell('', 75),
+                _tableCell('PAID OFF', 85, isBold: true, color: PdfColors.green700),
               ],
             ),
           ),

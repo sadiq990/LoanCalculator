@@ -50,6 +50,26 @@ Designed with **iOS-first aesthetics**, the app features a stunning Glassmorphis
 
 ---
 
+## Recent Updates & Quality Assurance
+
+### ✅ Latest Release
+- **Professional QA Testing**: Comprehensive testing across 11 categories completed
+- **Bug Fix**: Fixed TextEditingController memory leak in Quick Payment feature
+- **Enhanced Features**: 
+  - Improved payment date matching algorithm (month-based, not index-based)
+  - Payment status indicators in PDF exports (✓ checkmarks)
+  - Extra payment impact preview (Reduce Term/Reduce Payment strategies)
+
+### 📊 Quality Metrics
+- **Test Coverage**: 11 comprehensive QA categories
+- **Critical Issues**: 0 (1 found and fixed)
+- **Code Quality**: All linting issues resolved
+- **Performance**: Fast load times (<1s for 10 loans), optimized memory usage
+
+For detailed test results, see [QA_TESTING_REPORT.md](QA_TESTING_REPORT.md)
+
+---
+
 ## Getting Started
 
 ### Prerequisites

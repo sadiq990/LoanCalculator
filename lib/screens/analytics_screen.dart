@@ -553,9 +553,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 
   Widget _buildPayoffTimeline() {
-    final settings = Provider.of<SettingsProvider>(context, listen: false);
-    final symbol = settings.currencySymbol;
-
     final activeLoans = _loans.where((l) => !l.isPaidOff).toList();
     if (activeLoans.isEmpty) return const SizedBox.shrink();
 

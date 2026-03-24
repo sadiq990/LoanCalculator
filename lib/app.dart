@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import 'core/theme/app_theme.dart';
 import 'providers/settings_provider.dart';
 import 'screens/home_screen.dart';
-import 'screens/dashboard_screen.dart';
 import 'screens/analytics_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/lock_screen.dart';

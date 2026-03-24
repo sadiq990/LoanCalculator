@@ -270,7 +270,7 @@ class SettingsScreen extends StatelessWidget {
                             ),
                           Switch.adaptive(
                             value: isEnabled,
-                            activeColor: AppTheme.primary,
+                            activeThumbColor: AppTheme.primary,
                             onChanged: (val) {
                               if (val) {
                                 settings.setReminderDays(loan.id, 5); // default 5
@@ -362,7 +362,7 @@ class SettingsScreen extends StatelessWidget {
                 style: TextStyle(fontSize: 12, color: AppTheme.textLight)),
             trailing: Switch.adaptive(
               value: settings.biometricEnabled,
-              activeColor: AppTheme.primary,
+              activeThumbColor: AppTheme.primary,
               onChanged: (value) async {
                 HapticFeedback.selectionClick();
                 if (value) {

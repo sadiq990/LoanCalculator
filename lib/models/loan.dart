@@ -164,7 +164,16 @@ class Loan {
     int month = 1;
 
     while (currentBalance > Decimal.zero && month <= 360) {
-      bool hasActualPayment = (month - 1) < sortedPayments.length;
+      // Calculate the expected month date for this payment
+      final expectedPaymentDate = DateTime(createdAt.year, createdAt.month + month - 1, paymentDay);
+      
+      // Find payments that match this month
+      final paymentsInMonth = sortedPayments.where((p) {
+        return p.date.year == expectedPaymentDate.year && 
+               p.date.month == expectedPaymentDate.month;
+      }).toList();
+      
+      bool hasActualPayment = paymentsInMonth.isNotEmpty;
       Decimal totalPayment;
       Decimal interestPayment;
       bool isMonthPaid = false;
@@ -177,9 +186,11 @@ class Loan {
       }
 
       if (hasActualPayment) {
-        // Historical Actual Payment
-        final actualPmt = sortedPayments[month - 1];
-        totalPayment = Decimal.parse(actualPmt.amount.toString());
+        // Historical Actual Payment - use sum of all payments in that month
+        totalPayment = Decimal.zero;
+        for (final pmt in paymentsInMonth) {
+          totalPayment += Decimal.parse(pmt.amount.toString());
+        }
         isMonthPaid = true;
 
         if (totalPayment > currentBalance + interestPayment) {
@@ -221,10 +232,15 @@ class Loan {
       final lastDay = DateTime(nextDate.year, nextDate.month + 1, 0).day;
       final actualDay = paymentDay > lastDay ? lastDay : paymentDay;
 
+      // Use the actual payment date if payment was made, otherwise use expected date
+      final entryDate = hasActualPayment && paymentsInMonth.isNotEmpty
+          ? paymentsInMonth.first.date  // Use first payment date in that month
+          : DateTime(nextDate.year, nextDate.month, actualDay);
+
       schedule.add(
         AmortizationEntry(
           monthIndex: month,
-          date: hasActualPayment ? sortedPayments[month - 1].date : DateTime(nextDate.year, nextDate.month, actualDay),
+          date: entryDate,
           payment: totalPayment.toDouble(),
           principal: principalPayment.toDouble(),
           interest: interestPayment.toDouble(),

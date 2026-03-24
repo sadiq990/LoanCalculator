@@ -477,12 +477,90 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
           const SizedBox(height: AppTheme.spacing8),
           Text('Monthly: ${formatCurrency(loan.monthlyRequired, symbol: settings.currencySymbol)}',
               style: TextStyle(fontSize: 13, color: AppTheme.textLight)),
+          const SizedBox(height: AppTheme.spacing12),
+          _buildPaymentPreview(loan, settings),
           const SizedBox(height: AppTheme.spacing16),
           AnimatedButton(label: 'Record Payment', icon: Icons.check_rounded,
               isLoading: _isSaving, onPressed: _recordPayment),
         ],
       ),
     );
+  }
+
+  Widget _buildPaymentPreview(Loan loan, SettingsProvider settings) {
+    final extraAmount = double.tryParse(_paymentController.text.replaceAll('.', '').replaceAll(',', '.')) ?? loan.monthlyRequired;
+    final extra = (extraAmount - loan.monthlyRequired).clamp(0.0, double.infinity);
+    
+    if (extra <= 0) {
+      return const SizedBox.shrink();
+    }
+
+    if (loan.extraPaymentMode == ExtraPaymentMode.reduceTerm) {
+      // Show how much the term reduces
+      final scheduleWithExtra = loan.getOriginalAmortizationSchedule(extraMonthlyPayment: extra);
+      final currentPayoff = loan.simulatePayoff();
+      final daysReduced = (currentPayoff.monthsToPayoff.toDouble() - (scheduleWithExtra.length.toDouble() / 12)).clamp(0.0, double.infinity);
+      
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppTheme.primary.withValues(alpha: 0.08),
+          border: Border.all(color: AppTheme.primary.withValues(alpha: 0.3)),
+          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.calendar_month, color: AppTheme.primary, size: 18),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Term reduction potential',
+                      style: TextStyle(fontSize: 11, color: AppTheme.textLight)),
+                  Text(
+                    '+${formatCurrency(extra, symbol: settings.currencySymbol)}/month can reduce term by ~${daysReduced.toStringAsFixed(1)} months',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.primary),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    } else {
+      // Show how much payment reduces
+      final currentPayoff = loan.simulatePayoff();
+      final monthsLeft = currentPayoff.monthsToPayoff.toDouble();
+      
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppTheme.success.withValues(alpha: 0.08),
+          border: Border.all(color: AppTheme.success.withValues(alpha: 0.3)),
+          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.trending_down, color: AppTheme.success, size: 18),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Payment reduction potential',
+                      style: TextStyle(fontSize: 11, color: AppTheme.textLight)),
+                  Text(
+                    'With this payment, you can reduce monthly payment by ~${formatCurrency(extra / monthsLeft.clamp(1.0, 360.0), symbol: settings.currencySymbol)}',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.success),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   Widget _buildLoanInfo(Loan loan, SettingsProvider settings) {
@@ -558,6 +636,8 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
               ),
             ],
           ),
+          const SizedBox(height: AppTheme.spacing12),
+          _buildExtraPaymentInfo(loan, settings),
         ],
       ),
     );
@@ -570,11 +650,47 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
       final currentLoan = loans.firstWhere((l) => l.id == widget.loanId);
       final updatedLoan = currentLoan.copyWith(extraPaymentMode: mode);
       await storage.updateLoan(updatedLoan);
-      setState(() {});
+      // Reload the loan to show updated calculations
+      await _loadLoan();
       HapticFeedback.selectionClick();
     } catch (e) {
       debugPrint('Error updating mode: $e');
     }
+  }
+
+  Widget _buildExtraPaymentInfo(Loan loan, SettingsProvider settings) {
+    final isReduceTerm = loan.extraPaymentMode == ExtraPaymentMode.reduceTerm;
+    final description = isReduceTerm
+        ? 'Extra payments will reduce the loan term while keeping monthly payments constant'
+        : 'Extra payments will reduce monthly payments while keeping the loan term constant';
+    final icon = isReduceTerm ? Icons.calendar_month : Icons.trending_down;
+    final color = isReduceTerm ? AppTheme.primary : AppTheme.success;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              description,
+              style: TextStyle(
+                fontSize: 12,
+                color: AppTheme.textSecondary,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _infoItem(String label, String value) {

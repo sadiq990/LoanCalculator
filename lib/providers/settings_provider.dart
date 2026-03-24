@@ -14,7 +14,7 @@ class SettingsProvider extends ChangeNotifier {
   bool _biometricEnabled = false;
   bool _isOnboarded = false;
   String? _pin;
-  Map<String, int> _loanReminderDays = {};
+  final Map<String, int> _loanReminderDays = {};
   bool _isLoaded = false;
 
   ThemeMode get themeMode => _themeMode;
