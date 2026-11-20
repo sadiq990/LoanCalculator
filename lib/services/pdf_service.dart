@@ -8,14 +8,43 @@ import '../core/constants/app_disclaimers.dart';
 
 /// Enhanced PDF Service with professional amortization schedule layout
 class PdfService {
-  static Future<void> generateLoanReport(
+  /// Maps currency symbols to safe, standard ISO 4217 / ASCII codes for PDF engines
+  static String resolvePdfCurrency(String symbol) {
+    final s = symbol.trim();
+    switch (s) {
+      case '₼':
+        return 'AZN ';
+      case '₺':
+        return 'TRY ';
+      case '₽':
+        return 'RUB ';
+      case '€':
+        return 'EUR ';
+      default:
+        return s.isEmpty ? '' : (s == r'$' || s == '£' ? s : '$s ');
+    }
+  }
+
+  /// Builds a complete PDF document for the loan report
+  static Future<pw.Document> buildPdfDocument(
     Loan loan,
     String currencySymbol,
   ) async {
-    final pdf = pw.Document();
+    final pdfSymbol = resolvePdfCurrency(currencySymbol);
+
+    pw.ThemeData theme;
+    try {
+      final regular = await PdfGoogleFonts.notoSansRegular();
+      final bold = await PdfGoogleFonts.notoSansBold();
+      theme = pw.ThemeData.withFont(base: regular, bold: bold);
+    } catch (_) {
+      theme = pw.ThemeData.base();
+    }
+
+    final pdf = pw.Document(theme: theme);
 
     final currencyFormat = NumberFormat.currency(
-      symbol: currencySymbol,
+      symbol: pdfSymbol,
       decimalDigits: 2,
     );
     final dateFormat = DateFormat('MMMM d, yyyy');
@@ -30,7 +59,7 @@ class PdfService {
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(40),
+        margin: const pw.EdgeInsets.all(36),
         header: (context) => _buildHeader(loan, dateFormat),
         footer: (context) => _buildFooter(context),
         build: (context) => [
@@ -38,13 +67,13 @@ class PdfService {
           _buildSectionTitle('LOAN DETAILS'),
           pw.SizedBox(height: 8),
           _buildLoanDetailsCard(loan, currencyFormat),
-          pw.SizedBox(height: 20),
+          pw.SizedBox(height: 16),
 
           // Summary Statistics
           _buildSectionTitle('SUMMARY'),
           pw.SizedBox(height: 8),
           _buildSummaryCard(loan, simulation, totalInterest, payoffDate, totalPaid, currencyFormat),
-          pw.SizedBox(height: 20),
+          pw.SizedBox(height: 16),
 
           // Payment Schedule
           _buildSectionTitle('PAYMENT SCHEDULE'),
@@ -54,9 +83,19 @@ class PdfService {
       ),
     );
 
+    return pdf;
+  }
+
+  static Future<void> generateLoanReport(
+    Loan loan,
+    String currencySymbol,
+  ) async {
+    final pdf = await buildPdfDocument(loan, currencySymbol);
+    final sanitizedName = loan.name.replaceAll(RegExp(r'[^\w\s-]'), '').trim().replaceAll(' ', '_');
+
     await Printing.layoutPdf(
       onLayout: (PdfPageFormat format) async => pdf.save(),
-      name: '${loan.name.replaceAll(' ', '_')}_Amortization.pdf',
+      name: '${sanitizedName}_Amortization.pdf',
     );
   }
 
@@ -287,109 +326,110 @@ class PdfService {
     NumberFormat currencyFormat,
     DateFormat monthYearFormat,
   ) {
-    // Show first 60 entries or all if less
-    final displaySchedule = schedule.length > 60 ? schedule.sublist(0, 60) : schedule;
-    final hasMore = schedule.length > 60;
+    // Show up to 120 entries or all if less
+    final displaySchedule = schedule.length > 120 ? schedule.sublist(0, 120) : schedule;
+    final hasMore = schedule.length > 120;
 
-    return pw.Column(
+    return pw.Table(
+      border: const pw.TableBorder(
+        bottom: pw.BorderSide(color: PdfColors.grey300, width: 0.5),
+        horizontalInside: pw.BorderSide(color: PdfColors.grey200, width: 0.5),
+      ),
+      columnWidths: {
+        0: const pw.FixedColumnWidth(40),
+        1: const pw.FixedColumnWidth(25),
+        2: const pw.FixedColumnWidth(60),
+        3: const pw.FlexColumnWidth(1),
+        4: const pw.FlexColumnWidth(1),
+        5: const pw.FlexColumnWidth(1),
+        6: const pw.FlexColumnWidth(1.1),
+      },
       children: [
         // Table Header
-        pw.Container(
-          padding: const pw.EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-          decoration: const pw.BoxDecoration(
-            color: PdfColors.blue700,
-            borderRadius: pw.BorderRadius.only(
-              topLeft: pw.Radius.circular(6),
-              topRight: pw.Radius.circular(6),
-            ),
-          ),
-          child: pw.Row(
+        pw.TableRow(
+          decoration: const pw.BoxDecoration(color: PdfColors.blue700),
+          repeat: true,
+          children: [
+            _tableHeaderCell('Status', 40, alignment: pw.Alignment.centerLeft),
+            _tableHeaderCell('#', 25, alignment: pw.Alignment.centerLeft),
+            _tableHeaderCell('Date', 60, alignment: pw.Alignment.centerLeft),
+            _tableHeaderCell('Payment', null),
+            _tableHeaderCell('Principal', null),
+            _tableHeaderCell('Interest', null),
+            _tableHeaderCell('Balance', null),
+          ],
+        ),
+        // Table Rows
+        ...displaySchedule.asMap().entries.map((item) {
+          final index = item.key;
+          final entry = item.value;
+          final bgColor = entry.isPaid
+              ? PdfColors.green50
+              : (index % 2 == 0 ? PdfColors.white : PdfColors.grey50);
+          final status = entry.isPaid ? 'Paid' : '-';
+          final statusColor = entry.isPaid ? PdfColors.green700 : PdfColors.grey400;
+
+          return pw.TableRow(
+            decoration: pw.BoxDecoration(color: bgColor),
             children: [
-              _tableHeaderCell('✓', 25),
-              _tableHeaderCell('#', 25),
-              _tableHeaderCell('Date', 60),
-              _tableHeaderCell('Payment', 75),
-              _tableHeaderCell('Principal', 75),
-              _tableHeaderCell('Interest', 75),
-              _tableHeaderCell('Balance', 85),
+              _tableCell(status, 40, color: statusColor, isBold: entry.isPaid, alignment: pw.Alignment.centerLeft),
+              _tableCell('${entry.monthIndex}', 25, alignment: pw.Alignment.centerLeft),
+              _tableCell(monthYearFormat.format(entry.date), 60, alignment: pw.Alignment.centerLeft),
+              _tableCell(currencyFormat.format(entry.payment), null),
+              _tableCell(currencyFormat.format(entry.principal), null),
+              _tableCell(currencyFormat.format(entry.interest), null),
+              _tableCell(
+                currencyFormat.format(entry.remainingBalance),
+                null,
+                color: entry.remainingBalance <= 0 ? PdfColors.green700 : PdfColors.black,
+              ),
+            ],
+          );
+        }),
+        if (hasMore)
+          pw.TableRow(
+            children: [
+              pw.Container(
+                padding: const pw.EdgeInsets.symmetric(vertical: 8),
+                child: pw.Text(
+                  '... and ${schedule.length - 120} more payments ...',
+                  style: const pw.TextStyle(fontSize: 8.5, color: PdfColors.grey500),
+                ),
+              ),
+              pw.SizedBox(),
+              pw.SizedBox(),
+              pw.SizedBox(),
+              pw.SizedBox(),
+              pw.SizedBox(),
+              pw.SizedBox(),
             ],
           ),
-        ),
-        // Table Body
-        pw.ListView.builder(
-          itemCount: displaySchedule.length + (hasMore ? 1 : 0),
-          itemBuilder: (context, index) {
-            if (hasMore && index == displaySchedule.length) {
-              return pw.Container(
-                padding: const pw.EdgeInsets.symmetric(vertical: 8),
-                decoration: const pw.BoxDecoration(
-                  border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey300)),
-                ),
-                child: pw.Center(
-                  child: pw.Text(
-                    '... ${schedule.length - 60} more payments ...',
-                    style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey500),
-                  ),
-                ),
-              );
-            }
-
-            final entry = displaySchedule[index];
-            final bgColor = entry.isPaid ? PdfColors.green50 : (index % 2 == 0 ? PdfColors.white : PdfColors.grey50);
-            final checkmark = entry.isPaid ? '✓' : '';
-            final checkmarkColor = entry.isPaid ? PdfColors.green700 : PdfColors.grey300;
-
-            return pw.Container(
-              padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-              decoration: pw.BoxDecoration(
-                color: bgColor,
-                border: const pw.Border(bottom: pw.BorderSide(color: PdfColors.grey200, width: 0.5)),
-              ),
-              child: pw.Row(
-                children: [
-                  _tableCell(checkmark, 25, color: checkmarkColor, isBold: true),
-                  _tableCell('${entry.monthIndex}', 25, alignment: pw.Alignment.centerLeft),
-                  _tableCell(monthYearFormat.format(entry.date), 60),
-                  _tableCell(currencyFormat.format(entry.payment), 75),
-                  _tableCell(currencyFormat.format(entry.principal), 75),
-                  _tableCell(currencyFormat.format(entry.interest), 75),
-                  _tableCell(currencyFormat.format(entry.remainingBalance), 85,
-                      color: entry.remainingBalance <= 0 ? PdfColors.green700 : PdfColors.black),
-                ],
-              ),
-            );
-          },
-        ),
-        // Last row highlight
-        if (schedule.isNotEmpty)
-          pw.Container(
-            padding: const pw.EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-            decoration: const pw.BoxDecoration(
-              color: PdfColors.green50,
-              borderRadius: pw.BorderRadius.only(
-                bottomLeft: pw.Radius.circular(6),
-                bottomRight: pw.Radius.circular(6),
-              ),
-            ),
-            child: pw.Row(
-              children: [
-                _tableCell('', 25),
-                _tableCell('', 25),
-                _tableCell('', 60),
-                _tableCell('', 75),
-                _tableCell('', 75),
-                _tableCell('', 75),
-                _tableCell('PAID OFF', 85, isBold: true, color: PdfColors.green700),
-              ],
-            ),
+        if (schedule.isNotEmpty && schedule.last.remainingBalance <= 0)
+          pw.TableRow(
+            decoration: const pw.BoxDecoration(color: PdfColors.green50),
+            children: [
+              _tableCell('DONE', 40, isBold: true, color: PdfColors.green700, alignment: pw.Alignment.centerLeft),
+              _tableCell('', 25),
+              _tableCell('', 60),
+              _tableCell('', null),
+              _tableCell('', null),
+              _tableCell('', null),
+              _tableCell('PAID OFF', null, isBold: true, color: PdfColors.green700),
+            ],
           ),
       ],
     );
   }
 
-  static pw.Widget _tableHeaderCell(String text, double width) {
+  static pw.Widget _tableHeaderCell(
+    String text,
+    double? width, {
+    pw.Alignment alignment = pw.Alignment.centerRight,
+  }) {
     return pw.Container(
       width: width,
+      padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+      alignment: alignment,
       child: pw.Text(
         text,
         style: pw.TextStyle(
@@ -403,18 +443,19 @@ class PdfService {
 
   static pw.Widget _tableCell(
     String text,
-    double width, {
+    double? width, {
     pw.Alignment alignment = pw.Alignment.centerRight,
     PdfColor? color,
     bool isBold = false,
   }) {
     return pw.Container(
       width: width,
+      padding: const pw.EdgeInsets.symmetric(vertical: 5, horizontal: 4),
       alignment: alignment,
       child: pw.Text(
         text,
         style: pw.TextStyle(
-          fontSize: 9,
+          fontSize: 8.5,
           fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
           color: color ?? PdfColors.black,
         ),
