@@ -11,7 +11,8 @@ import '../providers/settings_provider.dart';
 
 /// Analytics Dashboard Screen with financial insights and charts
 class AnalyticsScreen extends StatefulWidget {
-  const AnalyticsScreen({super.key});
+  final bool isActive;
+  const AnalyticsScreen({super.key, this.isActive = true});
 
   @override
   State<AnalyticsScreen> createState() => _AnalyticsScreenState();
@@ -20,11 +21,37 @@ class AnalyticsScreen extends StatefulWidget {
 class _AnalyticsScreenState extends State<AnalyticsScreen> {
   List<Loan> _loans = [];
   bool _isLoading = true;
+  StorageService? _storageService;
 
   @override
   void initState() {
     super.initState();
     _loadData();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final storage = Provider.of<StorageService>(context, listen: false);
+    if (_storageService != storage) {
+      _storageService?.revision.removeListener(_loadData);
+      _storageService = storage;
+      _storageService?.revision.addListener(_loadData);
+    }
+  }
+
+  @override
+  void didUpdateWidget(AnalyticsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive && !oldWidget.isActive) {
+      _loadData();
+    }
+  }
+
+  @override
+  void dispose() {
+    _storageService?.revision.removeListener(_loadData);
+    super.dispose();
   }
 
   Future<void> _loadData() async {

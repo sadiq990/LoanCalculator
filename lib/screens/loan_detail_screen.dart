@@ -1,8 +1,13 @@
 import 'dart:math';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:confetti/confetti.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:path_provider/path_provider.dart';
+import '../services/csv_export_service.dart';
+import '../core/constants/app_disclaimers.dart';
 import '../core/theme/app_theme.dart';
 import '../core/widgets/app_scaffold.dart';
 import '../core/widgets/animated_card.dart';
@@ -201,6 +206,19 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
               _buildPaymentTimeline(loan, settings),
               const SizedBox(height: 16),
               _buildDeleteButton(),
+              const SizedBox(height: 24),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(
+                  AppDisclaimers.financialDisclaimer,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: AppTheme.textLight.withValues(alpha: 0.7),
+                    height: 1.4,
+                  ),
+                ),
+              ),
               const SizedBox(height: 80),
             ],
           ),
@@ -293,8 +311,33 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
           tooltip: 'Export PDF',
           onTap: () => PdfService.generateLoanReport(loan, settings.currencySymbol),
         ),
+        const SizedBox(width: 8),
+        _buildHeaderButton(
+          icon: Icons.table_view_rounded,
+          tooltip: 'Export CSV',
+          onTap: () => _exportScheduleCsv(context, loan, settings.currencySymbol),
+        ),
       ],
     );
+  }
+
+  Future<void> _exportScheduleCsv(BuildContext context, Loan loan, String currencySymbol) async {
+    try {
+      final csvString = CsvExportService.generateLoanCsv(loan, currencySymbol);
+      final dir = await getTemporaryDirectory();
+      final sanitizedName = loan.name.replaceAll(RegExp(r'[^\w\s-]'), '').trim().replaceAll(' ', '_');
+      final file = File('${dir.path}/${sanitizedName}_Amortization_Schedule.csv');
+      await file.writeAsString(csvString);
+      if (context.mounted) {
+        await Share.shareXFiles([XFile(file.path)], text: '${loan.name} Amortization Schedule');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to export CSV: $e'), backgroundColor: AppTheme.error),
+        );
+      }
+    }
   }
 
   Widget _buildHeaderButton({
@@ -355,7 +398,7 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
                     ),
                   ),
                   Text(
-                    formatCurrency(loan.totalRemaining, symbol: settings.currencySymbol),
+                    formatCurrency(loan.remainingDebt, symbol: settings.currencySymbol),
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.8),
                       fontSize: 12,
@@ -367,6 +410,14 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.6),
                       fontSize: 11,
+                    ),
+                  ),
+                  Text(
+                    'Accrued interest: ${formatCurrency(loan.accruedInterest, symbol: settings.currencySymbol)}',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.8),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ],
@@ -572,6 +623,11 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
           Text('Loan Terms',
               style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600,
               color: AppTheme.textPrimary)),
+          const SizedBox(height: AppTheme.spacing12),
+          Row(children: [
+            Expanded(child: _infoItem('Remaining Balance', formatCurrency(loan.remainingDebt, symbol: settings.currencySymbol))),
+            Expanded(child: _infoItem('Accrued interest', formatCurrency(loan.accruedInterest, symbol: settings.currencySymbol))),
+          ]),
           const SizedBox(height: AppTheme.spacing12),
           Row(children: [
             Expanded(child: _infoItem('Interest Rate', '${loan.interestRate.toStringAsFixed(1)}%')),

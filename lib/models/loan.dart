@@ -85,15 +85,13 @@ class Loan {
     return dRemaining.toDouble();
   }
 
-  /// Current Principal Balance (approximate for typical scenarios)
+  /// Remaining PRINCIPAL balance only (accrued interest is never capitalized into principal)
   double get remainingDebt {
     Decimal balance = Decimal.parse(totalAmount.toString());
     final sortedPayments = List<Payment>.from(payments)
       ..sort((a, b) => a.date.compareTo(b.date));
 
     DateTime lastDate = createdAt;
-    DateTime now = DateTime.now();
-
     final dRate = Decimal.parse(interestRate.toString());
     final d365 = Decimal.fromInt(365);
     final d100 = Decimal.fromInt(100);
@@ -104,27 +102,52 @@ class Loan {
       int days = payment.date.difference(lastDate).inDays;
       if (days < 0) days = 0;
 
+      Decimal periodInterest = Decimal.zero;
       if (interestRate > 0) {
         final dailyRate = dRate / (d100 * d365);
-        final interest = (dailyRate * balance.toRational() * Rational.fromInt(days)).toDecimal(scaleOnInfinitePrecision: 10);
-        balance += interest;
+        periodInterest = (dailyRate * balance.toRational() * Rational.fromInt(days))
+            .toDecimal(scaleOnInfinitePrecision: 10);
       }
-      
-      balance -= Decimal.parse(payment.amount.toString());
+
+      final paymentAmount = Decimal.parse(payment.amount.toString());
+      if (paymentAmount > periodInterest) {
+        final principalReduction = paymentAmount - periodInterest;
+        balance -= principalReduction;
+      }
       lastDate = payment.date;
     }
 
-    if (balance > Decimal.zero && interestRate > 0) {
-      int days = now.difference(lastDate).inDays;
-      if (days > 0) {
-        final dailyRate = dRate / (d100 * d365);
-        final interest = (dailyRate * balance.toRational() * Rational.fromInt(days)).toDecimal(scaleOnInfinitePrecision: 10);
-        balance += interest;
-      }
-    }
-
     final result = balance.toDouble();
-    return result < 0 ? 0 : result;
+    if (result <= 0.0001) return 0.0;
+    return (result * 100).round() / 100.0;
+  }
+
+  /// Simple interest accrued since the last paid period up to today, never compounded
+  double get accruedInterest {
+    if (interestRate <= 0) return 0.0;
+    final currentPrincipal = remainingDebt;
+    if (currentPrincipal <= 0.0001) return 0.0;
+
+    final sortedPayments = List<Payment>.from(payments)
+      ..sort((a, b) => a.date.compareTo(b.date));
+
+    DateTime lastDate = sortedPayments.isNotEmpty ? sortedPayments.last.date : createdAt;
+    DateTime now = DateTime.now();
+
+    int days = now.difference(lastDate).inDays;
+    if (days <= 0) return 0.0;
+
+    final dRate = Decimal.parse(interestRate.toString());
+    final d365 = Decimal.fromInt(365);
+    final d100 = Decimal.fromInt(100);
+    final dailyRate = dRate / (d100 * d365);
+    final dPrincipal = Decimal.parse(currentPrincipal.toString());
+
+    final accrued = (dailyRate * dPrincipal.toRational() * Rational.fromInt(days))
+        .toDecimal(scaleOnInfinitePrecision: 10);
+
+    final result = (accrued.toDouble() * 100).round() / 100.0;
+    return result <= 0 ? 0.0 : result;
   }
 
   double get totalPaid => payments.fold(0.0, (sum, p) => sum + p.amount);
@@ -160,10 +183,13 @@ class Loan {
     // Sort actual payments chronologically to map them to specific months.
     final sortedPayments = List<Payment>.from(payments)
       ..sort((a, b) => a.date.compareTo(b.date));
+    final DateTime? lastActualPaymentDate =
+        sortedPayments.isNotEmpty ? sortedPayments.last.date : null;
+    bool hasMissedPayments = false;
 
     int month = 1;
 
-    while (currentBalance > Decimal.zero && month <= 360) {
+    while (currentBalance > Decimal.zero && month <= 600) {
       // Calculate the expected month date for this payment
       final expectedPaymentDate = DateTime(createdAt.year, createdAt.month + month - 1, paymentDay);
       
@@ -180,7 +206,9 @@ class Loan {
 
       // Calculate pure interest up to this month
       if (interestRate > 0) {
-        interestPayment = (currentBalance.toRational() * dMonthlyRate).toDecimal(scaleOnInfinitePrecision: 10);
+        final rawInterest = (currentBalance.toRational() * dMonthlyRate).toDouble();
+        final roundedInterest = (rawInterest * 100).round() / 100.0;
+        interestPayment = Decimal.parse(roundedInterest.toStringAsFixed(2));
       } else {
         interestPayment = Decimal.zero;
       }
@@ -189,36 +217,56 @@ class Loan {
         // Historical Actual Payment - use sum of all payments in that month
         totalPayment = Decimal.zero;
         for (final pmt in paymentsInMonth) {
-          totalPayment += Decimal.parse(pmt.amount.toString());
+          final roundedPmt = (pmt.amount * 100).round() / 100.0;
+          totalPayment += Decimal.parse(roundedPmt.toStringAsFixed(2));
         }
         isMonthPaid = true;
 
-        if (totalPayment > currentBalance + interestPayment) {
+        if (totalPayment >= currentBalance + interestPayment) {
           totalPayment = currentBalance + interestPayment;
         }
       } else {
+        if (lastActualPaymentDate != null && expectedPaymentDate.isBefore(lastActualPaymentDate)) {
+          hasMissedPayments = true;
+        }
+
         // Future Projected Payment
         Decimal requiredPayment;
         if (activeMode == ExtraPaymentMode.reducePayment) {
           int remainingTerm = termMonths - month + 1;
-          if (remainingTerm > 0) {
+          if (currentBalance <= Decimal.parse('0.01') || remainingTerm <= 0) {
+            requiredPayment = currentBalance;
+          } else {
             if (interestRate <= 0) {
-              requiredPayment = (currentBalance.toRational() / Rational.fromInt(remainingTerm)).toDecimal(scaleOnInfinitePrecision: 10);
+              final req = currentBalance.toDouble() / remainingTerm;
+              final roundedReq = (req * 100).round() / 100.0;
+              requiredPayment = Decimal.parse(roundedReq.toStringAsFixed(2));
             } else {
               final r = dMonthlyRate.toDouble();
               final factor = math.pow(1 + r, remainingTerm).toDouble();
-              final req = (currentBalance.toDouble() * r * factor / (factor - 1));
-              requiredPayment = Decimal.parse(req.toStringAsFixed(10));
+              if (factor <= 1.0) {
+                requiredPayment = currentBalance;
+              } else {
+                final req = (currentBalance.toDouble() * r * factor / (factor - 1));
+                if (req.isInfinite || req.isNaN) {
+                  requiredPayment = currentBalance;
+                } else {
+                  final roundedReq = (req * 100).round() / 100.0;
+                  requiredPayment = Decimal.parse(roundedReq.toStringAsFixed(2));
+                }
+              }
             }
-          } else {
-            requiredPayment = currentBalance;
           }
         } else {
-          requiredPayment = Decimal.parse(monthlyRequired.toString());
+          final roundedMonthly = (monthlyRequired * 100).round() / 100.0;
+          requiredPayment = Decimal.parse(roundedMonthly.toStringAsFixed(2));
         }
 
-        totalPayment = requiredPayment + dExtra;
-        if (totalPayment > currentBalance + interestPayment) {
+        final rawTotalPayment = requiredPayment + dExtra;
+        final roundedTotal = (rawTotalPayment.toDouble() * 100).round() / 100.0;
+        totalPayment = Decimal.parse(roundedTotal.toStringAsFixed(2));
+        if (totalPayment >= currentBalance + interestPayment ||
+            (month >= termMonths && !hasMissedPayments)) {
           totalPayment = currentBalance + interestPayment;
         }
       }
@@ -345,11 +393,12 @@ extension LoanSimulation on Loan {
     int months = 0;
 
     // Safety break at 600 months (50 years)
-    while (currentBalance > 0.1 && months < 600) {
-      final interestPayment = currentBalance * r;
-      double totalMonthly = monthlyRequired + extraMonthlyPayment;
+    while (currentBalance > 0.01 && months < 600) {
+      final rawInterest = currentBalance * r;
+      final interestPayment = (rawInterest * 100).round() / 100.0;
+      double totalMonthly = ((monthlyRequired + extraMonthlyPayment) * 100).round() / 100.0;
       
-      if (totalMonthly > currentBalance + interestPayment) {
+      if (totalMonthly >= currentBalance + interestPayment) {
         totalMonthly = currentBalance + interestPayment;
       }
 
@@ -357,11 +406,12 @@ extension LoanSimulation on Loan {
       
       interestSum += interestPayment;
       currentBalance -= principalPayment;
+      if (currentBalance < 0.01) currentBalance = 0;
       months++;
     }
 
     return PayoffSimulation(
-      totalInterest: interestSum,
+      totalInterest: (interestSum * 100).round() / 100.0,
       monthsToPayoff: months,
       totalCost: totalAmount + interestSum,
     );

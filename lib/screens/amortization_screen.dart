@@ -1,8 +1,13 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:path_provider/path_provider.dart';
 import '../core/theme/app_theme.dart';
 import '../core/widgets/app_scaffold.dart';
 import '../core/utils/currency_formatter.dart';
+import '../core/constants/app_disclaimers.dart';
+import '../services/csv_export_service.dart';
 import '../models/loan.dart';
 import '../models/amortization_entry.dart';
 import '../providers/settings_provider.dart';
@@ -34,6 +39,13 @@ class _AmortizationScreenState extends State<AmortizationScreen> {
     return AppScaffold(
       appBar: AppBar(
         title: const Text('Amortization Schedule'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.table_view_rounded),
+            tooltip: 'Export CSV',
+            onPressed: () => _exportCsv(context, widget.loan, symbol),
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -51,9 +63,41 @@ class _AmortizationScreenState extends State<AmortizationScreen> {
               },
             ),
           ),
+          // Disclaimer footer
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Text(
+              AppDisclaimers.financialDisclaimer,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 10,
+                color: AppTheme.textLight.withValues(alpha: 0.7),
+                height: 1.35,
+              ),
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _exportCsv(BuildContext context, Loan loan, String currencySymbol) async {
+    try {
+      final csvString = CsvExportService.generateLoanCsv(loan, currencySymbol);
+      final dir = await getTemporaryDirectory();
+      final sanitizedName = loan.name.replaceAll(RegExp(r'[^\w\s-]'), '').trim().replaceAll(' ', '_');
+      final file = File('${dir.path}/${sanitizedName}_Amortization_Schedule.csv');
+      await file.writeAsString(csvString);
+      if (context.mounted) {
+        await Share.shareXFiles([XFile(file.path)], text: '${loan.name} Amortization Schedule');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to export CSV: $e'), backgroundColor: AppTheme.error),
+        );
+      }
+    }
   }
 
   Widget _buildSimulationHeader(String symbol, double saved, int months) {

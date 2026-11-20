@@ -20,6 +20,7 @@ class _LockScreenState extends State<LockScreen> with SingleTickerProviderStateM
   late Animation<double> _pulseScale;
   bool _showPinEntry = false;
   bool _biometricFailed = false;
+  String? _biometricMessage;
 
   @override
   void initState() {
@@ -39,18 +40,28 @@ class _LockScreenState extends State<LockScreen> with SingleTickerProviderStateM
 
   Future<void> _authenticate() async {
     final settings = Provider.of<SettingsProvider>(context, listen: false);
-    final success = await _auth.authenticate();
-    if (success) {
-      HapticFeedback.mediumImpact();
-      widget.onUnlock();
-    } else {
-      // Biometric failed - show PIN option
-      if (settings.pin != null) {
+    settings.isBiometricPromptActive = true;
+    try {
+      final result = await _auth.authenticateWithDetails();
+      if (!mounted) return;
+
+      if (result.isSuccess) {
+        HapticFeedback.mediumImpact();
+        widget.onUnlock();
+      } else {
         setState(() {
           _biometricFailed = true;
-          _showPinEntry = true;
+          _biometricMessage = result.message;
         });
+
+        if (settings.hasPin) {
+          setState(() {
+            _showPinEntry = true;
+          });
+        }
       }
+    } finally {
+      settings.isBiometricPromptActive = false;
     }
   }
 
@@ -62,10 +73,8 @@ class _LockScreenState extends State<LockScreen> with SingleTickerProviderStateM
   @override
   Widget build(BuildContext context) {
     if (_showPinEntry) {
-      final settings = Provider.of<SettingsProvider>(context, listen: false);
       return PinEntryScreen(
         onSuccess: _onPinSuccess,
-        storedPin: settings.pin,
       );
     }
 
@@ -98,7 +107,7 @@ class _LockScreenState extends State<LockScreen> with SingleTickerProviderStateM
                     color: AppTheme.primary.withValues(alpha: 0.15),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(
+                  child: const Icon(
                     Icons.lock_person_rounded,
                     size: 48,
                     color: AppTheme.primary,
@@ -107,7 +116,7 @@ class _LockScreenState extends State<LockScreen> with SingleTickerProviderStateM
               ),
               const SizedBox(height: 32),
               Text(
-                'Wallet Locked',
+                'Loan Tracker Locked',
                 style: TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.w800,
@@ -120,8 +129,8 @@ class _LockScreenState extends State<LockScreen> with SingleTickerProviderStateM
                 padding: const EdgeInsets.symmetric(horizontal: 40),
                 child: Text(
                   _biometricFailed
-                      ? 'Biometric authentication failed. Please use your PIN or try again.'
-                      : 'Verify your identity to access your loan statistics and payment history.',
+                      ? (_biometricMessage ?? 'Biometric authentication failed. Please use your PIN or try again.')
+                      : 'Verify your identity to access your private loan and payment records.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 15,
@@ -149,7 +158,7 @@ class _LockScreenState extends State<LockScreen> with SingleTickerProviderStateM
                     // PIN fallback button
                     Consumer<SettingsProvider>(
                       builder: (context, settings, _) {
-                        if (settings.pin == null) return const SizedBox.shrink();
+                        if (!settings.hasPin) return const SizedBox.shrink();
                         return Column(
                           children: [
                             TextButton.icon(
@@ -168,7 +177,7 @@ class _LockScreenState extends State<LockScreen> with SingleTickerProviderStateM
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Protected by system biometrics',
+                      'Protected by system biometrics & secure enclave',
                       style: TextStyle(
                         fontSize: 12,
                         color: AppTheme.textLight.withValues(alpha: 0.6),

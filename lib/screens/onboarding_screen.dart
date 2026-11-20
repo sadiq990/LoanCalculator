@@ -85,24 +85,42 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             child: Column(
               children: [
                 const SizedBox(height: 20),
-                // Logo & App Name
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: AppTheme.primary.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(12),
+                // Logo & App Name with Skip button
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: AppTheme.primary.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(Icons.account_balance_rounded, color: AppTheme.primary, size: 24),
+                          ),
+                          const SizedBox(width: 10),
+                          const Text(
+                            'Loan Tracker',
+                            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, letterSpacing: -0.5),
+                          ),
+                        ],
                       ),
-                      child: const Icon(Icons.account_balance_rounded, color: AppTheme.primary, size: 24),
-                    ),
-                    const SizedBox(width: 10),
-                    const Text(
-                      'Loan Tracker',
-                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, letterSpacing: -0.5),
-                    ),
-                  ],
+                      TextButton(
+                        onPressed: _finishOnboarding,
+                        child: Text(
+                          'Skip',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.primary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
 
                 Expanded(
@@ -179,6 +197,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
                       // Next / Start Button
                       GestureDetector(
+                        behavior: HitTestBehavior.opaque,
                         onTap: () async {
                           HapticFeedback.lightImpact();
                           if (_currentPage < _pages.length - 1) {

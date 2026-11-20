@@ -4,6 +4,7 @@ import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
 import '../models/loan.dart';
 import '../models/amortization_entry.dart';
+import '../core/constants/app_disclaimers.dart';
 
 /// Enhanced PDF Service with professional amortization schedule layout
 class PdfService {
@@ -117,20 +118,30 @@ class PdfService {
 
   static pw.Widget _buildFooter(pw.Context context) {
     return pw.Container(
-      padding: const pw.EdgeInsets.only(top: 10),
+      padding: const pw.EdgeInsets.only(top: 8),
       decoration: const pw.BoxDecoration(
         border: pw.Border(top: pw.BorderSide(color: PdfColors.grey300, width: 0.5)),
       ),
-      child: pw.Row(
-        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
           pw.Text(
-            'Loan Tracker App',
-            style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey500),
+            AppDisclaimers.financialDisclaimer,
+            style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey600),
           ),
-          pw.Text(
-            'Page ${context.pageNumber} of ${context.pagesCount}',
-            style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey500),
+          pw.SizedBox(height: 4),
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              pw.Text(
+                'Loan Tracker',
+                style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey500),
+              ),
+              pw.Text(
+                'Page ${context.pageNumber} of ${context.pagesCount}',
+                style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey500),
+              ),
+            ],
           ),
         ],
       ),

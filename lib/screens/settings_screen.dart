@@ -2,9 +2,17 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../core/constants/app_links.dart';
+import '../core/constants/feature_flags.dart';
+import '../core/constants/app_disclaimers.dart';
+import '../services/backup_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../core/theme/app_theme.dart';
 import '../core/widgets/app_scaffold.dart';
 import '../core/widgets/animated_card.dart';
@@ -19,8 +27,30 @@ import 'privacy_policy_screen.dart';
 import 'terms_of_service_screen.dart';
 import 'pin_entry_screen.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  bool _dismissedNote = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadNoteState();
+  }
+
+  Future<void> _loadNoteState() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _dismissedNote = prefs.getBool('dismissed_local_storage_note') ?? false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -40,7 +70,54 @@ class SettingsScreen extends StatelessWidget {
               color: AppTheme.textPrimary,
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
+
+          // One-time dismissible local-only privacy note
+          if (!_dismissedNote) ...[
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppTheme.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                border: Border.all(color: AppTheme.primary.withValues(alpha: 0.2)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.shield_outlined, color: AppTheme.primary, size: 22),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Privacy Notice: Local-Only Storage',
+                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'All data is stored solely on this device. Create regular backups to safeguard your loan records if you change devices.',
+                          style: TextStyle(fontSize: 12, color: AppTheme.textSecondary, height: 1.35),
+                        ),
+                      ],
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () async {
+                      setState(() => _dismissedNote = true);
+                      final prefs = await SharedPreferences.getInstance();
+                      await prefs.setBool('dismissed_local_storage_note', true);
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 4),
+                      child: Icon(Icons.close_rounded, size: 18, color: AppTheme.textLight),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+          ],
 
           _sectionHeader('APPEARANCE'),
           _buildThemeSelector(context, settings),
@@ -49,7 +126,11 @@ class SettingsScreen extends StatelessWidget {
           _sectionHeader('PREFERENCES'),
           _buildCurrencySelector(context, settings),
           const SizedBox(height: 12),
-          _buildReminderSelector(context, settings),
+          _buildOpenAppOnSelector(context, settings),
+          if (FeatureFlags.kRemindersEnabled) ...[
+            const SizedBox(height: 12),
+            _buildReminderSelector(context, settings),
+          ],
 
           if (!kIsWeb) ...[
             const SizedBox(height: 28),
@@ -58,7 +139,7 @@ class SettingsScreen extends StatelessWidget {
           ],
 
           const SizedBox(height: 28),
-          _sectionHeader('DATA EXPORT'),
+          _sectionHeader('DATA & BACKUP'),
           _buildExportSection(context, settings),
 
           const SizedBox(height: 40),
@@ -209,6 +290,87 @@ class SettingsScreen extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildOpenAppOnSelector(BuildContext context, SettingsProvider settings) {
+    return AnimatedCard(
+      child: ListTile(
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                AppTheme.primary.withValues(alpha: 0.2),
+                AppTheme.primary.withValues(alpha: 0.05),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+          ),
+          child: const Icon(Icons.launch_rounded, color: AppTheme.primary, size: 20),
+        ),
+        title: const Text('Open app on',
+            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+        subtitle: Text(
+          settings.openAppOn.label,
+          style: TextStyle(fontSize: 12, color: AppTheme.textLight),
+        ),
+        trailing: Icon(Icons.chevron_right_rounded, color: AppTheme.textLight),
+        onTap: () {
+          HapticFeedback.selectionClick();
+          showModalBottomSheet(
+            context: context,
+            backgroundColor: Theme.of(context).cardColor,
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.vertical(top: Radius.circular(AppTheme.radiusLg)),
+            ),
+            builder: (ctx) {
+              return SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                        child: Text(
+                          'Open app on',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.textPrimary,
+                          ),
+                        ),
+                      ),
+                      const Divider(),
+                      ...OpenAppOn.values.map((option) {
+                        final isSelected = settings.openAppOn == option;
+                        return ListTile(
+                          title: Text(
+                            option.label,
+                            style: TextStyle(
+                              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                              color: isSelected ? AppTheme.primary : AppTheme.textPrimary,
+                            ),
+                          ),
+                          trailing: isSelected
+                              ? const Icon(Icons.check_rounded, color: AppTheme.primary)
+                              : null,
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            settings.setOpenAppOn(option);
+                            Navigator.pop(ctx);
+                          },
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
       ),
     );
   }
@@ -378,7 +540,7 @@ class SettingsScreen extends StatelessWidget {
                     return;
                   }
                   // If enabling and no PIN set, prompt to create PIN
-                  if (settings.pin == null) {
+                  if (!settings.hasPin) {
                     final bool? pinCreated = await Navigator.of(context).push<bool>(
                       MaterialPageRoute(
                         builder: (_) => PinEntryScreen(
@@ -390,12 +552,18 @@ class SettingsScreen extends StatelessWidget {
                     );
                     if (pinCreated != true) return;
                   }
+                  await settings.setBiometricEnabled(true);
+                } else {
+                  // Disabling lock requires current PIN or successful biometric check
+                  final authenticated = await _authenticateSecurityAction(context, settings);
+                  if (authenticated) {
+                    await settings.setBiometricEnabled(false);
+                  }
                 }
-                await settings.setBiometricEnabled(value);
               },
             ),
           ),
-          // PIN Setup (only show if biometrics enabled and PIN exists)
+          // PIN Setup & Auto-lock timeout (only show if biometrics enabled)
           if (settings.biometricEnabled) ...[
             Divider(height: 1, indent: 16, endIndent: 16, color: AppTheme.divider),
             ListTile(
@@ -410,15 +578,19 @@ class SettingsScreen extends StatelessWidget {
               title: const Text('Backup PIN',
                   style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
               subtitle: Text(
-                settings.pin != null ? 'PIN is set' : 'Set a backup PIN',
+                settings.hasPin ? 'PIN is set' : 'Set a backup PIN',
                 style: TextStyle(fontSize: 12, color: AppTheme.textLight),
               ),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (settings.pin != null)
+                  if (settings.hasPin)
                     TextButton(
                       onPressed: () async {
+                        // Changing PIN requires current PIN or biometric check first
+                        final authenticated = await _authenticateSecurityAction(context, settings);
+                        if (!authenticated || !context.mounted) return;
+
                         final bool? resetPin = await Navigator.of(context).push<bool>(
                           MaterialPageRoute(
                             builder: (_) => PinEntryScreen(
@@ -445,7 +617,7 @@ class SettingsScreen extends StatelessWidget {
                 ],
               ),
               onTap: () async {
-                if (settings.pin == null) {
+                if (!settings.hasPin) {
                   await Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) => PinEntryScreen(
@@ -457,6 +629,29 @@ class SettingsScreen extends StatelessWidget {
                   );
                 }
               },
+            ),
+            Divider(height: 1, indent: 16, endIndent: 16, color: AppTheme.divider),
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppTheme.accent.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                ),
+                child: const Icon(Icons.timer_outlined, color: AppTheme.accent, size: 20),
+              ),
+              title: const Text('Require Unlock',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+              subtitle: Text(settings.autoLockTimeout.label,
+                  style: TextStyle(fontSize: 12, color: AppTheme.textLight)),
+              trailing: PopupMenuButton<AutoLockTimeout>(
+                initialValue: settings.autoLockTimeout,
+                onSelected: (timeout) => settings.setAutoLockTimeout(timeout),
+                itemBuilder: (context) => AutoLockTimeout.values.map((t) => PopupMenuItem(
+                  value: t,
+                  child: Text(t.label),
+                )).toList(),
+              ),
             ),
           ],
         ],
@@ -493,17 +688,29 @@ class SettingsScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 4),
-          Text(
-            'v1.1.0',
-            style: TextStyle(
-              color: AppTheme.textLight,
-              fontWeight: FontWeight.w600,
-              fontSize: 14,
-            ),
+          FutureBuilder<PackageInfo>(
+            future: PackageInfo.fromPlatform(),
+            builder: (context, snapshot) {
+              final version = snapshot.hasData
+                  ? 'Version ${snapshot.data!.version} (build ${snapshot.data!.buildNumber})'
+                  : 'Version 1.0.0 (build 1)';
+              return Text(
+                version,
+                style: TextStyle(
+                  color: AppTheme.textLight,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              );
+            },
           ),
           const SizedBox(height: 16),
           TextButton(
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PrivacyPolicyScreen())),
+            onPressed: () => _openExternalUrl(
+              context,
+              AppLinks.privacyPolicyUrl,
+              onFallback: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PrivacyPolicyScreen())),
+            ),
             child: Text(
               'Privacy Policy',
               style: TextStyle(
@@ -515,7 +722,11 @@ class SettingsScreen extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           TextButton(
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TermsOfServiceScreen())),
+            onPressed: () => _openExternalUrl(
+              context,
+              AppLinks.termsUrl,
+              onFallback: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TermsOfServiceScreen())),
+            ),
             child: Text(
               'Terms of Service',
               style: TextStyle(
@@ -525,9 +736,34 @@ class SettingsScreen extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
+          TextButton(
+            onPressed: () => _openSupport(context),
+            child: Text(
+              'Support & Contact',
+              style: TextStyle(
+                color: AppTheme.primary,
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              AppDisclaimers.financialDisclaimer,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: AppTheme.textLight.withValues(alpha: 0.7),
+                fontSize: 11,
+                height: 1.4,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
           Text(
-            'Made by Fibontech',
+            'Loan Tracker',
             style: TextStyle(
               color: AppTheme.textLight.withValues(alpha: 0.6),
               fontSize: 12,
@@ -536,6 +772,62 @@ class SettingsScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _openExternalUrl(BuildContext context, String urlString, {VoidCallback? onFallback}) async {
+    final uri = Uri.parse(urlString);
+    try {
+      final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched && onFallback != null) {
+        onFallback();
+      }
+    } catch (_) {
+      if (onFallback != null) {
+        onFallback();
+      }
+    }
+  }
+
+  Future<void> _openSupport(BuildContext context) async {
+    final emailUri = Uri(
+      scheme: 'mailto',
+      path: AppLinks.supportEmail,
+      queryParameters: {'subject': 'Loan Tracker Support'},
+    );
+    try {
+      final launched = await launchUrl(emailUri);
+      if (!launched) {
+        await launchUrl(Uri.parse(AppLinks.supportUrl), mode: LaunchMode.externalApplication);
+      }
+    } catch (_) {
+      try {
+        await launchUrl(Uri.parse(AppLinks.supportUrl), mode: LaunchMode.externalApplication);
+      } catch (_) {}
+    }
+  }
+
+  Future<bool> _authenticateSecurityAction(BuildContext context, SettingsProvider settings) async {
+    final authService = AuthService();
+    settings.isBiometricPromptActive = true;
+    try {
+      final result = await authService.authenticateWithDetails();
+      if (result.isSuccess) return true;
+    } finally {
+      settings.isBiometricPromptActive = false;
+    }
+
+    if (!context.mounted) return false;
+    if (!settings.hasPin) return false;
+
+    final verified = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PinEntryScreen(
+          onSuccess: () => Navigator.pop(context, true),
+        ),
+      ),
+    );
+    return verified == true;
   }
 
   Widget _buildExportSection(BuildContext context, SettingsProvider settings) {
@@ -548,6 +840,70 @@ class SettingsScreen extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 8),
           child: Column(
             children: [
+              // Export Backup (JSON)
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        AppTheme.primary.withValues(alpha: 0.2),
+                        AppTheme.primary.withValues(alpha: 0.05),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                  ),
+                  child: const Icon(Icons.cloud_upload_outlined, color: AppTheme.primary, size: 20),
+                ),
+                title: const Text('Export Backup (JSON)',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+                subtitle: Text(
+                  'Full backup for safe keeping & device transfer',
+                  style: TextStyle(fontSize: 12, color: AppTheme.textLight),
+                ),
+                trailing: Icon(Icons.chevron_right_rounded, color: AppTheme.textLight),
+                onTap: () async {
+                  try {
+                    await BackupService.exportBackup(
+                      context: context,
+                      loans: snapshot.data ?? [],
+                      settings: settings,
+                    );
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Backup export failed: $e'), backgroundColor: AppTheme.error),
+                      );
+                    }
+                  }
+                },
+              ),
+              Divider(height: 1, indent: 16, endIndent: 16, color: AppTheme.divider),
+              // Import Backup (JSON)
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        AppTheme.accent.withValues(alpha: 0.2),
+                        AppTheme.accent.withValues(alpha: 0.05),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                  ),
+                  child: const Icon(Icons.cloud_download_outlined, color: AppTheme.accent, size: 20),
+                ),
+                title: const Text('Import Backup (JSON)',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+                subtitle: Text(
+                  'Restore records with Merge or Replace options',
+                  style: TextStyle(fontSize: 12, color: AppTheme.textLight),
+                ),
+                trailing: Icon(Icons.chevron_right_rounded, color: AppTheme.textLight),
+                onTap: () => _handleImportBackup(context, settings),
+              ),
+              Divider(height: 1, indent: 16, endIndent: 16, color: AppTheme.divider),
               // Export All Loans PDF
               ListTile(
                 leading: Container(
@@ -608,6 +964,101 @@ class SettingsScreen extends StatelessWidget {
         );
       },
     );
+  }
+
+  Future<void> _handleImportBackup(BuildContext context, SettingsProvider settings) async {
+    try {
+      final preview = await BackupService.pickAndValidateBackup();
+      if (preview == null || !context.mounted) return;
+
+      final storage = Provider.of<StorageService>(context, listen: false);
+
+      showDialog(
+        context: context,
+        builder: (dialogCtx) => AlertDialog(
+          backgroundColor: Theme.of(context).cardColor,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusLg)),
+          title: const Text('Restore Backup', style: TextStyle(fontWeight: FontWeight.w700)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('${preview.loans.length} loan(s) found in backup.'),
+              const SizedBox(height: 8),
+              Text(
+                'Exported: ${DateFormat('yyyy-MM-dd HH:mm').format(preview.exportedAt.toLocal())}',
+                style: TextStyle(fontSize: 12, color: AppTheme.textLight),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Select how you want to restore:\n\n'
+                '• Merge: Retain existing loans and add/update imported loans.\n'
+                '• Replace: Clear existing loans and restore backup.',
+                style: TextStyle(fontSize: 13, height: 1.4),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx),
+              child: const Text('Cancel'),
+            ),
+            OutlinedButton(
+              onPressed: () async {
+                Navigator.pop(dialogCtx);
+                await BackupService.restoreBackup(
+                  preview: preview,
+                  storage: storage,
+                  settings: settings,
+                  replaceExisting: false,
+                );
+                if (context.mounted) {
+                  setState(() {});
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Merged ${preview.loans.length} loan(s) successfully.'),
+                      backgroundColor: AppTheme.success,
+                    ),
+                  );
+                }
+              },
+              child: const Text('Merge'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                Navigator.pop(dialogCtx);
+                await BackupService.restoreBackup(
+                  preview: preview,
+                  storage: storage,
+                  settings: settings,
+                  replaceExisting: true,
+                );
+                if (context.mounted) {
+                  setState(() {});
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Replaced all loans with ${preview.loans.length} backup loan(s).'),
+                      backgroundColor: AppTheme.success,
+                    ),
+                  );
+                }
+              },
+              child: const Text('Replace'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Import error: $e'),
+            backgroundColor: AppTheme.error,
+          ),
+        );
+      }
+    }
   }
 
   void _showExportDialog(BuildContext context, SettingsProvider settings, List<Loan> loans) {

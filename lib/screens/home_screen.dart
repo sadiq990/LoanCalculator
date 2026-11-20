@@ -13,9 +13,9 @@ import '../services/storage_service.dart';
 import '../providers/settings_provider.dart';
 import 'add_loan_screen.dart';
 import 'loan_detail_screen.dart';
-
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final bool isActive;
+  const HomeScreen({super.key, this.isActive = true});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -34,6 +34,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   late AnimationController _fabController;
   bool _fabExpanded = false;
 
+  StorageService? _storageService;
+
   @override
   void initState() {
     super.initState();
@@ -42,7 +44,27 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final storage = Provider.of<StorageService>(context, listen: false);
+    if (_storageService != storage) {
+      _storageService?.revision.removeListener(_loadLoans);
+      _storageService = storage;
+      _storageService?.revision.addListener(_loadLoans);
+    }
+  }
+
+  @override
+  void didUpdateWidget(HomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive && !oldWidget.isActive) {
+      _loadLoans();
+    }
+  }
+
+  @override
   void dispose() {
+    _storageService?.revision.removeListener(_loadLoans);
     _fabController.dispose();
     super.dispose();
   }
@@ -156,13 +178,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            '${_getGreeting()} 👋',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: AppTheme.textLight,
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '${_getGreeting()} 👋',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: AppTheme.textLight,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 4),
           if (_activeCount > 0) ...[
@@ -526,13 +553,22 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
                               Text(
-                                formatCurrency(loan.totalRemaining, symbol: settings.currencySymbol),
+                                formatCurrency(loan.remainingDebt, symbol: settings.currencySymbol),
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w700,
                                   color: AppTheme.textPrimary,
                                 ),
                               ),
+                              if (loan.accruedInterest > 0)
+                                Text(
+                                  'Accrued interest: ${formatCurrency(loan.accruedInterest, symbol: settings.currencySymbol)}',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500,
+                                    color: AppTheme.warning,
+                                  ),
+                                ),
                               Text(
                                 '${(progress * 100).toStringAsFixed(0)}%',
                                 style: TextStyle(
@@ -792,85 +828,113 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   void _showQuickPaySheet(Loan loan) {
-    final settings = Provider.of<SettingsProvider>(context, listen: false);
-
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (context) {
-        final controller = TextEditingController();
-        return SingleChildScrollView(
-          child: Padding(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.of(context).viewInsets.bottom,
-              left: 20,
-              right: 20,
-              top: 24,
+      builder: (context) => QuickPayBottomSheet(
+        loan: loan,
+        onPaymentRecorded: _loadLoans,
+      ),
+    );
+  }
+}
+
+class QuickPayBottomSheet extends StatefulWidget {
+  final Loan loan;
+  final VoidCallback onPaymentRecorded;
+
+  const QuickPayBottomSheet({
+    super.key,
+    required this.loan,
+    required this.onPaymentRecorded,
+  });
+
+  @override
+  State<QuickPayBottomSheet> createState() => _QuickPayBottomSheetState();
+}
+
+class _QuickPayBottomSheetState extends State<QuickPayBottomSheet> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _recordPayment(String text) async {
+    final amount = double.tryParse(text);
+    if (amount != null && amount > 0) {
+      final storage = Provider.of<StorageService>(context, listen: false);
+      await storage.addPayment(widget.loan.id, Payment.create(amount: amount));
+      if (mounted) {
+        Navigator.pop(context);
+        widget.onPaymentRecorded();
+        HapticFeedback.mediumImpact();
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = Provider.of<SettingsProvider>(context, listen: false);
+
+    return SingleChildScrollView(
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+          left: 20,
+          right: 20,
+          top: 24,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppTheme.divider,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 36,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppTheme.divider,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  'Quick Payment — ${loan.name}',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: controller,
-                  keyboardType: TextInputType.number,
-                  autofocus: true,
-                  decoration: InputDecoration(
-                    hintText: loan.monthlyRequired.toStringAsFixed(0),
-                    suffixText: settings.currencySymbol,
-                  ),
-                  onSubmitted: (value) async {
-                    final amount = double.tryParse(value);
-                    if (amount != null && amount > 0) {
-                      final storage = Provider.of<StorageService>(context, listen: false);
-                      await storage.addPayment(loan.id, Payment.create(amount: amount));
-                      if (context.mounted) Navigator.pop(context);
-                      controller.dispose();
-                      _loadLoans();
-                      HapticFeedback.mediumImpact();
-                    }
-                  },
-                ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: () async {
-                      final amount = double.tryParse(controller.text);
-                      if (amount != null && amount > 0) {
-                        final storage = Provider.of<StorageService>(context, listen: false);
-                        await storage.addPayment(loan.id, Payment.create(amount: amount));
-                        if (context.mounted) Navigator.pop(context);
-                        controller.dispose();
-                        _loadLoans();
-                        HapticFeedback.mediumImpact();
-                      }
-                    },
-                    child: const Text('Record Payment'),
-                  ),
-                ),
-                const SizedBox(height: 20),
-              ],
+            const SizedBox(height: 20),
+            Text(
+              'Quick Payment — ${widget.loan.name}',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
             ),
-          ),
-        );
-      },
+            const SizedBox(height: 16),
+            TextField(
+              controller: _controller,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              autofocus: true,
+              decoration: InputDecoration(
+                hintText: widget.loan.monthlyRequired.toStringAsFixed(0),
+                suffixText: settings.currencySymbol,
+              ),
+              onSubmitted: _recordPayment,
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () => _recordPayment(_controller.text),
+                child: const Text('Record Payment'),
+              ),
+            ),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
     );
   }
 }

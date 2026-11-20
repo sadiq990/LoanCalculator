@@ -1,19 +1,27 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import '../core/theme/app_theme.dart';
+import '../providers/settings_provider.dart';
+import '../services/secure_pin_service.dart';
 
 class PinEntryScreen extends StatefulWidget {
   final VoidCallback onSuccess;
-  final String? storedPin;
   final bool isSetupMode;
   final Function(String)? onPinSet;
+  final Future<PinVerifyResult> Function(String)? onVerifyPin;
+
+  // Kept for backward compatibility if callers pass storedPin
+  final String? storedPin;
 
   const PinEntryScreen({
     super.key,
     required this.onSuccess,
-    this.storedPin,
     this.isSetupMode = false,
     this.onPinSet,
+    this.onVerifyPin,
+    this.storedPin,
   });
 
   @override
@@ -26,8 +34,66 @@ class _PinEntryScreenState extends State<PinEntryScreen> {
   bool _isConfirming = false;
   String? _errorMessage;
   bool _showError = false;
+  bool _isVerifying = false;
+
+  int _remainingLockoutSeconds = 0;
+  Timer? _lockoutTimer;
+
+  bool get _isLockedOut => _remainingLockoutSeconds > 0;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!widget.isSetupMode) {
+      _checkInitialLockout();
+    }
+  }
+
+  @override
+  void dispose() {
+    _lockoutTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _checkInitialLockout() async {
+    final settings = Provider.of<SettingsProvider>(context, listen: false);
+    final remaining = await settings.getRemainingLockoutSeconds();
+    if (remaining > 0 && mounted) {
+      _startLockoutTimer(remaining);
+    }
+  }
+
+  void _startLockoutTimer(int seconds) {
+    _lockoutTimer?.cancel();
+    setState(() {
+      _remainingLockoutSeconds = seconds;
+      _showError = true;
+      _errorMessage = 'Too many failed attempts. Locked for ${_remainingLockoutSeconds}s.';
+    });
+
+    _lockoutTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_remainingLockoutSeconds <= 1) {
+        timer.cancel();
+        setState(() {
+          _remainingLockoutSeconds = 0;
+          _showError = false;
+          _errorMessage = null;
+        });
+      } else {
+        setState(() {
+          _remainingLockoutSeconds--;
+          _errorMessage = 'Too many failed attempts. Locked for ${_remainingLockoutSeconds}s.';
+        });
+      }
+    });
+  }
 
   void _addDigit(String digit) {
+    if (_isLockedOut || _isVerifying) return;
     HapticFeedback.lightImpact();
     if (_pin.length < 6) {
       setState(() {
@@ -42,6 +108,7 @@ class _PinEntryScreenState extends State<PinEntryScreen> {
   }
 
   void _removeDigit() {
+    if (_isLockedOut || _isVerifying) return;
     HapticFeedback.lightImpact();
     if (_pin.isNotEmpty) {
       setState(() {
@@ -79,16 +146,34 @@ class _PinEntryScreenState extends State<PinEntryScreen> {
       }
     } else {
       // Verification mode
-      if (_pin == widget.storedPin) {
-        HapticFeedback.mediumImpact();
-        widget.onSuccess();
-      } else {
-        HapticFeedback.heavyImpact();
-        setState(() {
-          _pin = '';
-          _errorMessage = 'Incorrect PIN. Try again.';
-          _showError = true;
-        });
+      setState(() => _isVerifying = true);
+      try {
+        final settings = Provider.of<SettingsProvider>(context, listen: false);
+        final result = widget.onVerifyPin != null
+            ? await widget.onVerifyPin!(_pin)
+            : await settings.verifyPin(_pin);
+
+        if (!mounted) return;
+
+        if (result.success) {
+          HapticFeedback.mediumImpact();
+          widget.onSuccess();
+        } else {
+          HapticFeedback.heavyImpact();
+          setState(() {
+            _pin = '';
+            _showError = true;
+            _errorMessage = result.errorMessage ?? 'Incorrect PIN. Try again.';
+          });
+
+          if (result.isLockedOut && result.remainingLockoutSeconds > 0) {
+            _startLockoutTimer(result.remainingLockoutSeconds);
+          }
+        }
+      } finally {
+        if (mounted) {
+          setState(() => _isVerifying = false);
+        }
       }
     }
   }
@@ -103,7 +188,9 @@ class _PinEntryScreenState extends State<PinEntryScreen> {
         ? (_isConfirming
             ? 'Re-enter your 6-digit PIN'
             : 'Create a 6-digit PIN to secure your data')
-        : 'Enter your 6-digit PIN';
+        : (_isLockedOut
+            ? 'Account temporarily locked. Please wait.'
+            : 'Enter your 6-digit PIN');
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -116,13 +203,15 @@ class _PinEntryScreenState extends State<PinEntryScreen> {
               width: 80,
               height: 80,
               decoration: BoxDecoration(
-                color: AppTheme.primary.withValues(alpha: 0.15),
+                color: (_isLockedOut ? AppTheme.error : AppTheme.primary).withValues(alpha: 0.15),
                 shape: BoxShape.circle,
               ),
               child: Icon(
-                widget.isSetupMode ? Icons.lock_outline_rounded : Icons.lock_rounded,
+                _isLockedOut
+                    ? Icons.lock_clock_rounded
+                    : (widget.isSetupMode ? Icons.lock_outline_rounded : Icons.lock_rounded),
                 size: 40,
-                color: AppTheme.primary,
+                color: _isLockedOut ? AppTheme.error : AppTheme.primary,
               ),
             ),
             const SizedBox(height: 24),
@@ -143,7 +232,7 @@ class _PinEntryScreenState extends State<PinEntryScreen> {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 15,
-                  color: AppTheme.textLight,
+                  color: _isLockedOut ? AppTheme.error : AppTheme.textLight,
                   height: 1.4,
                 ),
               ),
@@ -177,12 +266,16 @@ class _PinEntryScreenState extends State<PinEntryScreen> {
             // Error message
             if (_showError && _errorMessage != null) ...[
               const SizedBox(height: 16),
-              Text(
-                _errorMessage!,
-                style: TextStyle(
-                  color: AppTheme.error,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Text(
+                  _errorMessage!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: AppTheme.error,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
@@ -242,22 +335,26 @@ class _PinEntryScreenState extends State<PinEntryScreen> {
   }
 
   Widget _buildNumberButton(String digit) {
+    final disabled = _isLockedOut || _isVerifying;
     return GestureDetector(
-      onTap: () => _addDigit(digit),
-      child: Container(
-        width: 72,
-        height: 72,
-        decoration: BoxDecoration(
-          color: AppTheme.surfaceLight.withValues(alpha: 0.5),
-          shape: BoxShape.circle,
-        ),
-        child: Center(
-          child: Text(
-            digit,
-            style: TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.w600,
-              color: AppTheme.textPrimary,
+      onTap: disabled ? null : () => _addDigit(digit),
+      child: Opacity(
+        opacity: disabled ? 0.35 : 1.0,
+        child: Container(
+          width: 72,
+          height: 72,
+          decoration: BoxDecoration(
+            color: AppTheme.surfaceLight.withValues(alpha: 0.5),
+            shape: BoxShape.circle,
+          ),
+          child: Center(
+            child: Text(
+              digit,
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textPrimary,
+              ),
             ),
           ),
         ),
@@ -266,20 +363,24 @@ class _PinEntryScreenState extends State<PinEntryScreen> {
   }
 
   Widget _buildDeleteButton() {
+    final disabled = _isLockedOut || _isVerifying;
     return GestureDetector(
-      onTap: _removeDigit,
-      child: Container(
-        width: 72,
-        height: 72,
-        decoration: BoxDecoration(
-          color: Colors.transparent,
-          shape: BoxShape.circle,
-        ),
-        child: Center(
-          child: Icon(
-            Icons.backspace_outlined,
-            size: 28,
-            color: AppTheme.textSecondary,
+      onTap: disabled ? null : _removeDigit,
+      child: Opacity(
+        opacity: disabled ? 0.35 : 1.0,
+        child: Container(
+          width: 72,
+          height: 72,
+          decoration: const BoxDecoration(
+            color: Colors.transparent,
+            shape: BoxShape.circle,
+          ),
+          child: Center(
+            child: Icon(
+              Icons.backspace_outlined,
+              size: 28,
+              color: AppTheme.textSecondary,
+            ),
           ),
         ),
       ),

@@ -8,6 +8,13 @@ class StorageService {
   final _db = DatabaseHelper.instance;
   bool _initialized = false;
 
+  /// Global revision counter that increments on any loan data mutation
+  final ValueNotifier<int> revision = ValueNotifier<int>(0);
+
+  void notifyLoanChange() {
+    revision.value++;
+  }
+
   Future<void> init() async {
     try {
       debugPrint('StorageService: Starting initialization...');
@@ -47,6 +54,7 @@ class StorageService {
     try {
       await _ensureInitialized();
       await _db.insertLoan(loan);
+      notifyLoanChange();
     } catch (e) {
       debugPrint('Error adding loan: $e');
       rethrow;
@@ -58,6 +66,7 @@ class StorageService {
     try {
       await _ensureInitialized();
       await _db.updateLoan(updatedLoan);
+      notifyLoanChange();
     } catch (e) {
       debugPrint('Error updating loan: $e');
       rethrow;
@@ -69,6 +78,7 @@ class StorageService {
     try {
       await _ensureInitialized();
       await _db.deleteLoan(loanId);
+      notifyLoanChange();
     } catch (e) {
       debugPrint('Error deleting loan: $e');
       rethrow;
@@ -80,6 +90,7 @@ class StorageService {
     try {
       await _ensureInitialized();
       await _db.insertPayment(loanId, payment);
+      notifyLoanChange();
       return await getLoan(loanId);
     } catch (e) {
       debugPrint('Error adding payment: $e');
@@ -103,9 +114,34 @@ class StorageService {
     try {
       await _ensureInitialized();
       await _db.clearAll();
+      notifyLoanChange();
     } catch (e) {
       debugPrint('Error clearing data: $e');
       rethrow;
     }
+  }
+
+  /// Replaces all loans atomically with the provided list
+  Future<void> replaceAllLoans(List<Loan> newLoans) async {
+    await _ensureInitialized();
+    await _db.clearAll();
+    for (final loan in newLoans) {
+      await _db.insertLoan(loan);
+    }
+    notifyLoanChange();
+  }
+
+  /// Merges imported loans: updates existing loans and adds new ones
+  Future<void> mergeLoans(List<Loan> importedLoans) async {
+    await _ensureInitialized();
+    for (final loan in importedLoans) {
+      final existing = await _db.getLoan(loan.id);
+      if (existing != null) {
+        await _db.updateLoan(loan);
+      } else {
+        await _db.insertLoan(loan);
+      }
+    }
+    notifyLoanChange();
   }
 }

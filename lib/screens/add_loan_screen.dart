@@ -1,20 +1,97 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
+import 'package:intl/intl.dart';
 import 'dart:math';
 import '../core/theme/app_theme.dart';
 import '../core/widgets/app_scaffold.dart';
 import '../core/widgets/animated_button.dart';
 import '../core/constants/loan_icons.dart';
 import '../core/utils/currency_formatter.dart';
-import '../core/utils/input_formatters.dart';
 import '../models/loan.dart';
 import '../services/storage_service.dart';
 import 'package:provider/provider.dart';
 import '../providers/settings_provider.dart';
 
 class AddLoanScreen extends StatefulWidget {
-  const AddLoanScreen({super.key});
+  final double? initialAmount;
+  final double? initialRate;
+  final int? initialTermMonths;
+
+  const AddLoanScreen({
+    super.key,
+    this.initialAmount,
+    this.initialRate,
+    this.initialTermMonths,
+  });
+
+  static double? parseAmount(String input) {
+    String s = input.trim().replaceAll(' ', '');
+    if (s.isEmpty) return null;
+
+    // Both comma and dot present: determine decimal point by whichever comes last
+    if (s.contains(',') && s.contains('.')) {
+      if (s.lastIndexOf('.') > s.lastIndexOf(',')) {
+        // e.g. 15,000.50
+        s = s.replaceAll(',', '');
+      } else {
+        // e.g. 15.000,50
+        s = s.replaceAll('.', '').replaceAll(',', '.');
+      }
+      return double.tryParse(s);
+    }
+
+    // Multiple dots: e.g. 1.000.000 (thousands separators)
+    if (s.split('.').length > 2) {
+      s = s.replaceAll('.', '');
+      return double.tryParse(s);
+    }
+
+    // Multiple commas: e.g. 1,000,000 (thousands separators)
+    if (s.split(',').length > 2) {
+      s = s.replaceAll(',', '');
+      return double.tryParse(s);
+    }
+
+    // Single dot followed by exactly 3 digits: e.g. 500.000 or 100.000 (Azerbaijani/European thousands separator)
+    if (s.contains('.')) {
+      final parts = s.split('.');
+      if (parts.length == 2 && parts[1].length == 3) {
+        return double.tryParse(s.replaceAll('.', ''));
+      }
+    }
+
+    // Single comma
+    if (s.contains(',')) {
+      final parts = s.split(',');
+      if (parts.length == 2 && parts[1].length <= 2) {
+        // e.g. 15000,50
+        s = s.replaceAll(',', '.');
+        return double.tryParse(s);
+      }
+      if (parts.length == 2 && parts[1].length == 3) {
+        // e.g. 500,000
+        s = s.replaceAll(',', '');
+        return double.tryParse(s);
+      }
+      try {
+        return NumberFormat.decimalPattern().parse(s).toDouble();
+      } catch (_) {
+        s = s.replaceAll(',', '.');
+        return double.tryParse(s);
+      }
+    }
+
+    final direct = double.tryParse(s);
+    if (direct != null) return direct;
+
+    try {
+      return NumberFormat.decimalPattern().parse(s).toDouble();
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   State<AddLoanScreen> createState() => _AddLoanScreenState();
 }
@@ -39,6 +116,25 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
   int _paymentDay = 15;
 
   bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialAmount != null) {
+      _amountController.text = widget.initialAmount! % 1 == 0
+          ? widget.initialAmount!.toInt().toString()
+          : widget.initialAmount!.toString();
+    }
+    if (widget.initialRate != null) {
+      _rateController.text = widget.initialRate! % 1 == 0
+          ? widget.initialRate!.toInt().toString()
+          : widget.initialRate!.toString();
+    }
+    if (widget.initialTermMonths != null) {
+      _termController.text = widget.initialTermMonths.toString();
+      _termInYears = false;
+    }
+  }
 
   @override
   void dispose() {
@@ -74,6 +170,8 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
     }
   }
 
+  double? _parseAmount(String input) => AddLoanScreen.parseAmount(input);
+
   bool _validateCurrentStep() {
     switch (_currentStep) {
       case 0:
@@ -83,9 +181,7 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
         }
         return true;
       case 1:
-        final amount = double.tryParse(
-          _amountController.text.replaceAll('.', '').replaceAll(',', '.'),
-        );
+        final amount = _parseAmount(_amountController.text);
         final rate = double.tryParse(_rateController.text);
         if (amount == null || amount <= 0) {
           _showError('Please enter a valid amount');
@@ -117,9 +213,10 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
   Future<void> _saveLoan() async {
     setState(() => _isSaving = true);
     try {
-      final amount = double.parse(
-        _amountController.text.replaceAll('.', '').replaceAll(',', '.'),
-      );
+      final amount = _parseAmount(_amountController.text);
+      if (amount == null || amount <= 0) {
+        throw Exception('Invalid amount');
+      }
       final rate = double.parse(_rateController.text);
       final rawTerm = int.parse(_termController.text);
       final termMonths = _termInYears ? rawTerm * 12 : rawTerm;
@@ -148,9 +245,7 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
   }
 
   double? get _estimatedMonthly {
-    final amount = double.tryParse(
-      _amountController.text.replaceAll('.', '').replaceAll(',', '.'),
-    );
+    final amount = _parseAmount(_amountController.text);
     final rate = double.tryParse(_rateController.text);
     final rawTerm = int.tryParse(_termController.text);
     if (amount == null || rate == null || rawTerm == null) return null;
@@ -333,8 +428,10 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
 
           TextFormField(
             controller: _amountController,
-            keyboardType: TextInputType.number,
-            inputFormatters: [CurrencyInputFormatter()],
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
+            ],
             style: Theme.of(context).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w800, color: AppTheme.textPrimary) ?? TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: AppTheme.textPrimary),
             decoration: InputDecoration(
               labelText: 'Loan Amount',
@@ -472,9 +569,7 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
   Widget _buildStep4Review() {
     final settings = Provider.of<SettingsProvider>(context);
     final symbol = settings.currencySymbol;
-    final amount = double.tryParse(
-      _amountController.text.replaceAll('.', '').replaceAll(',', '.'),
-    );
+    final amount = _parseAmount(_amountController.text);
     final rate = double.tryParse(_rateController.text);
     final rawTerm = int.tryParse(_termController.text);
     final termMonths = _termInYears ? (rawTerm ?? 0) * 12 : (rawTerm ?? 0);

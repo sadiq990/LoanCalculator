@@ -1,5 +1,5 @@
 name: loan_calculator
-description: "A new Flutter project."
+description: "Loan Tracker - Privacy-first, local-only loan tracker and payoff planner."
 publish_to: 'none'
 
 version: 1.0.0+1
@@ -30,6 +30,11 @@ dependencies:
   shimmer: ^3.0.0
   share_plus: ^10.0.0
   path_provider: ^2.1.4
+  url_launcher: ^6.3.2
+  package_info_plus: ^9.0.1
+  flutter_secure_storage: ^10.3.4
+  cryptography: ^2.9.0
+  file_picker: ^11.0.3
 
 dev_dependencies:
   flutter_test:

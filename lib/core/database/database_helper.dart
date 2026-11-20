@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../models/loan.dart';
 import '../../models/payment.dart';
 
@@ -10,18 +12,28 @@ class DatabaseHelper {
 
   late Box<Loan> _loansBox;
   bool _initialized = false;
+  bool _hasCorruptedData = false;
+  String? _lastError;
+
+  bool get hasCorruptedData => _hasCorruptedData;
+  String? get lastError => _lastError;
+  bool get isInitialized => _initialized;
 
   DatabaseHelper._init();
 
   /// Initialize Hive database
-  Future<void> init() async {
+  Future<void> init({String? customDirectory}) async {
     try {
       if (_initialized) return;
 
       debugPrint('DatabaseHelper: Initializing Hive...');
 
       // Initialize Hive
-      await Hive.initFlutter();
+      if (customDirectory != null) {
+        Hive.init(customDirectory);
+      } else {
+        await Hive.initFlutter();
+      }
 
       // Register adapters BEFORE opening boxes
       debugPrint('DatabaseHelper: Registering adapters...');
@@ -36,24 +48,21 @@ class DatabaseHelper {
 
       debugPrint('DatabaseHelper: Opening Hive boxes...');
 
-      // Try to open boxes, if they're corrupted, delete and recreate
+      // Try to open boxes; if corrupted, move to backup and recover rather than deleting
       try {
         _loansBox = await Hive.openBox<Loan>('loans');
         debugPrint('DatabaseHelper: Loans box opened successfully');
       } catch (e) {
-        debugPrint('WARNING: Failed to open loans box, clearing corrupted data: $e');
+        debugPrint('WARNING: Failed to open loans box: $e');
+        _hasCorruptedData = true;
+        _lastError = e.toString();
         
-        // Delete corrupted boxes
-        try {
-          await Hive.deleteBoxFromDisk('loans');
-          debugPrint('DatabaseHelper: Deleted corrupted loans box');
-        } catch (deleteError) {
-          debugPrint('Could not delete loans box: $deleteError');
-        }
+        // Move damaged file to backup
+        await backupDamagedBox('loans', directoryPath: customDirectory);
 
-        // Try again
+        // Open a fresh box so app remains functional and can offer recovery
         _loansBox = await Hive.openBox<Loan>('loans');
-        debugPrint('DatabaseHelper: Loans box recreated successfully');
+        debugPrint('DatabaseHelper: Reopened fresh loans box');
       }
 
       _initialized = true;
@@ -65,12 +74,43 @@ class DatabaseHelper {
     }
   }
 
+  /// Safely backs up a damaged Hive box file to .bak without deleting user data
+  static Future<void> backupDamagedBox(String boxName, {String? directoryPath}) async {
+    try {
+      String? dirPath = directoryPath;
+      if (dirPath == null) {
+        try {
+          final dir = await getApplicationDocumentsDirectory();
+          dirPath = dir.path;
+        } catch (_) {}
+      }
+      if (dirPath != null) {
+        final hiveFile = File('$dirPath/$boxName.hive');
+        if (hiveFile.existsSync()) {
+          final bakFile = File('$dirPath/$boxName.hive.bak');
+          await hiveFile.copy(bakFile.path);
+          await hiveFile.delete();
+          debugPrint('DatabaseHelper: Damaged box backed up to ${bakFile.path}');
+        }
+        final lockFile = File('$dirPath/$boxName.lock');
+        if (lockFile.existsSync()) {
+          try {
+            await lockFile.delete();
+          } catch (_) {}
+        }
+      }
+    } catch (e) {
+      debugPrint('DatabaseHelper: Error backing up damaged box: $e');
+    }
+  }
+
   /// Get all loans
   Future<List<Loan>> getAllLoans() async {
     try {
       return _loansBox.values.toList();
     } catch (e) {
       debugPrint('Error getting all loans: $e');
+      _hasCorruptedData = true;
       return [];
     }
   }
@@ -139,6 +179,7 @@ class DatabaseHelper {
   Future<void> clearAll() async {
     try {
       await _loansBox.clear();
+      _hasCorruptedData = false;
       debugPrint('All data cleared');
     } catch (e) {
       debugPrint('Error clearing data: $e');
@@ -151,10 +192,11 @@ class DatabaseHelper {
     try {
       await _loansBox.close();
       await Hive.close();
-      _initialized = false;
       debugPrint('Database closed');
     } catch (e) {
       debugPrint('Error closing database: $e');
+    } finally {
+      _initialized = false;
     }
   }
 }
@@ -166,18 +208,27 @@ class LoanAdapter extends TypeAdapter<Loan> {
 
   @override
   Loan read(BinaryReader reader) {
+    final id = reader.readString();
+    final name = reader.readString();
+    final totalAmount = reader.readDouble();
+    final interestRate = reader.readDouble();
+    final termMonths = reader.readInt();
+    final paymentDay = reader.readInt();
+    final createdAt = DateTime.parse(reader.readString());
     final paymentsList = reader.readList();
+    final iconId = reader.readString();
     final extraPaymentModeStr = reader.readString();
+
     return Loan(
-      id: reader.readString(),
-      name: reader.readString(),
-      totalAmount: reader.readDouble(),
-      interestRate: reader.readDouble(),
-      termMonths: reader.readInt(),
-      paymentDay: reader.readInt(),
-      createdAt: DateTime.parse(reader.readString()),
+      id: id,
+      name: name,
+      totalAmount: totalAmount,
+      interestRate: interestRate,
+      termMonths: termMonths,
+      paymentDay: paymentDay,
+      createdAt: createdAt,
       payments: List<Payment>.from(paymentsList),
-      iconId: reader.readString(),
+      iconId: iconId,
       extraPaymentMode: extraPaymentModeStr == 'reducePayment'
           ? ExtraPaymentMode.reducePayment
           : ExtraPaymentMode.reduceTerm,

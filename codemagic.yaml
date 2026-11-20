@@ -1,0 +1,62 @@
+workflows:
+  ios-release:
+    name: iOS TestFlight & App Store Release
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+      groups:
+        - app_store_credentials # Set this group in Codemagic UI containing APP_STORE_CONNECT_PRIVATE_KEY etc.
+      vars:
+        BUNDLE_ID: "com.loancalculator.app"
+        # TODO: Replace with numerical Apple App ID from App Store Connect (Apps -> Your App -> App Information -> Apple ID)
+        APP_STORE_APP_ID: "YOUR_APP_STORE_APP_ID"
+        # The following can either be configured in Codemagic UI environment groups or passed here:
+        # APP_STORE_CONNECT_KEY_IDENTIFIER: "ABC123XYZ"
+        # APP_STORE_CONNECT_ISSUER_ID: "12345678-1234-1234-1234-123456789012"
+        # APP_STORE_CONNECT_PRIVATE_KEY: Encrypted in Codemagic environment
+        # CERTIFICATE_PRIVATE_KEY: Encrypted in Codemagic environment
+    scripts:
+      - name: Set up code signing settings on Xcode project
+        script: |
+          xcode-project use-profiles
+      - name: Get Flutter packages
+        script: |
+          flutter packages pub get
+      - name: Run Flutter static analysis
+        script: |
+          flutter analyze
+      - name: Run Flutter tests
+        script: |
+          flutter test
+      - name: Set up Keychain & fetch signing files
+        script: |
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles
+      - name: Build IPA for App Store / TestFlight
+        script: |
+          flutter build ipa --release \
+            --export-options-plist=/Users/builder/export_options.plist
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - flutter_drive.log
+    publishing:
+      email:
+        recipients:
+          - dev@example.com # Replace with release manager email
+        notify:
+          success: true
+          failure: true
+      app_store_connect:
+        auth: integration # Uses the App Store Connect API key integration configured in Codemagic
+        submit_to_testflight: true
+        submit_to_app_store: false
+        beta_groups:
+          - "Internal Testers"
