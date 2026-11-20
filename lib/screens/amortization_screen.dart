@@ -1,11 +1,9 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:share_plus/share_plus.dart';
-import 'package:path_provider/path_provider.dart';
 import '../core/theme/app_theme.dart';
 import '../core/widgets/app_scaffold.dart';
 import '../core/utils/currency_formatter.dart';
+import '../core/utils/file_exporter.dart';
 import '../core/constants/app_disclaimers.dart';
 import '../services/csv_export_service.dart';
 import '../models/loan.dart';
@@ -84,12 +82,21 @@ class _AmortizationScreenState extends State<AmortizationScreen> {
   Future<void> _exportCsv(BuildContext context, Loan loan, String currencySymbol) async {
     try {
       final csvString = CsvExportService.generateLoanCsv(loan, currencySymbol);
-      final dir = await getTemporaryDirectory();
       final sanitizedName = loan.name.replaceAll(RegExp(r'[^\w\s-]'), '').trim().replaceAll(' ', '_');
-      final file = File('${dir.path}/${sanitizedName}_Amortization_Schedule.csv');
-      await file.writeAsString(csvString);
+      final fileName = '${sanitizedName}_Amortization_Schedule.csv';
+      await FileExporter.exportString(
+        content: csvString,
+        fileName: fileName,
+        mimeType: 'text/csv',
+        subject: '${loan.name} Amortization Schedule',
+      );
       if (context.mounted) {
-        await Share.shareXFiles([XFile(file.path)], text: '${loan.name} Amortization Schedule');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Exported ${loan.name} Amortization Schedule (CSV)'),
+            backgroundColor: AppTheme.success,
+          ),
+        );
       }
     } catch (e) {
       if (context.mounted) {

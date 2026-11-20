@@ -3,9 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
+import '../core/utils/file_exporter.dart';
 import '../models/loan.dart';
 import '../providers/settings_provider.dart';
 import 'storage_service.dart';
@@ -55,13 +54,11 @@ class BackupService {
     };
 
     final jsonString = const JsonEncoder.withIndent('  ').convert(backupJson);
-    final tempDir = await getTemporaryDirectory();
     final fileName = 'LoanTracker-Backup-$dateStr.json';
-    final file = File('${tempDir.path}/$fileName');
-    await file.writeAsString(jsonString);
-
-    await Share.shareXFiles(
-      [XFile(file.path, mimeType: 'application/json')],
+    await FileExporter.exportString(
+      content: jsonString,
+      fileName: fileName,
+      mimeType: 'application/json',
       subject: 'Loan Tracker Backup ($dateStr)',
     );
   }
@@ -71,19 +68,24 @@ class BackupService {
     final result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['json'],
+      withData: true,
     );
 
     if (result == null || result.files.isEmpty) {
       return null;
     }
 
-    final path = result.files.single.path;
-    if (path == null) {
+    final file = result.files.single;
+    String content;
+    if (file.bytes != null) {
+      content = utf8.decode(file.bytes!);
+    } else if (file.path != null) {
+      final ioFile = File(file.path!);
+      content = await ioFile.readAsString();
+    } else {
       throw const FormatException('Cannot access selected backup file.');
     }
 
-    final file = File(path);
-    final content = await file.readAsString();
     return parseBackupJson(content);
   }
 

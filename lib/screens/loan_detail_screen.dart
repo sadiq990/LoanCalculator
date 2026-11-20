@@ -1,11 +1,8 @@
 import 'dart:math';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:confetti/confetti.dart';
 import 'package:provider/provider.dart';
-import 'package:share_plus/share_plus.dart';
-import 'package:path_provider/path_provider.dart';
 import '../services/csv_export_service.dart';
 import '../core/constants/app_disclaimers.dart';
 import '../core/theme/app_theme.dart';
@@ -20,7 +17,9 @@ import '../models/payment.dart';
 import '../services/storage_service.dart';
 import '../services/pdf_service.dart';
 import '../providers/settings_provider.dart';
+import '../core/utils/file_exporter.dart';
 import 'amortization_screen.dart';
+import 'calculator_screen.dart';
 
 class LoanDetailScreen extends StatefulWidget {
   final String loanId;
@@ -298,6 +297,23 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
       mainAxisSize: MainAxisSize.min,
       children: [
         _buildHeaderButton(
+          icon: Icons.calculate_rounded,
+          tooltip: 'Calculator',
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => CalculatorScreen(
+                  initialAmount: loan.totalAmount,
+                  initialRate: loan.interestRate,
+                  initialTermMonths: loan.termMonths,
+                ),
+              ),
+            );
+          },
+        ),
+        const SizedBox(width: 6),
+        _buildHeaderButton(
           icon: Icons.table_chart_rounded,
           tooltip: 'Amortization',
           onTap: () {
@@ -305,15 +321,15 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
                 MaterialPageRoute(builder: (_) => AmortizationScreen(loan: loan)));
           },
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 6),
         _buildHeaderButton(
           icon: Icons.picture_as_pdf_rounded,
           tooltip: 'Export PDF',
           onTap: () => PdfService.generateLoanReport(loan, settings.currencySymbol),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 6),
         _buildHeaderButton(
-          icon: Icons.table_view_rounded,
+          icon: Icons.file_download_rounded,
           tooltip: 'Export CSV',
           onTap: () => _exportScheduleCsv(context, loan, settings.currencySymbol),
         ),
@@ -324,12 +340,21 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
   Future<void> _exportScheduleCsv(BuildContext context, Loan loan, String currencySymbol) async {
     try {
       final csvString = CsvExportService.generateLoanCsv(loan, currencySymbol);
-      final dir = await getTemporaryDirectory();
       final sanitizedName = loan.name.replaceAll(RegExp(r'[^\w\s-]'), '').trim().replaceAll(' ', '_');
-      final file = File('${dir.path}/${sanitizedName}_Amortization_Schedule.csv');
-      await file.writeAsString(csvString);
+      final fileName = '${sanitizedName}_Amortization_Schedule.csv';
+      await FileExporter.exportString(
+        content: csvString,
+        fileName: fileName,
+        mimeType: 'text/csv',
+        subject: '${loan.name} Amortization Schedule',
+      );
       if (context.mounted) {
-        await Share.shareXFiles([XFile(file.path)], text: '${loan.name} Amortization Schedule');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Exported ${loan.name} Amortization Schedule (CSV)'),
+            backgroundColor: AppTheme.success,
+          ),
+        );
       }
     } catch (e) {
       if (context.mounted) {
@@ -345,22 +370,25 @@ class _LoanDetailScreenState extends State<LoanDetailScreen>
     required String tooltip,
     required VoidCallback onTap,
   }) {
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.lightImpact();
-        onTap();
-      },
-      child: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.1),
-            width: 1,
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.lightImpact();
+          onTap();
+        },
+        child: Container(
+          padding: const EdgeInsets.all(7),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.1),
+              width: 1,
+            ),
           ),
+          child: Icon(icon, color: Colors.white, size: 18),
         ),
-        child: Icon(icon, color: Colors.white, size: 20),
       ),
     );
   }

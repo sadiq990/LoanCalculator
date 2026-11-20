@@ -1,11 +1,8 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import 'package:share_plus/share_plus.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../core/constants/app_links.dart';
@@ -21,6 +18,7 @@ import '../services/auth_service.dart';
 import '../services/storage_service.dart';
 import '../services/pdf_service.dart';
 import '../services/csv_export_service.dart';
+import '../core/utils/file_exporter.dart';
 import '../models/loan.dart';
 import '../core/constants/loan_icons.dart';
 import 'privacy_policy_screen.dart';
@@ -1103,25 +1101,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _exportCsv(BuildContext context, SettingsProvider settings, List<Loan> loans) async {
     try {
       final csvContent = CsvExportService.generateAllLoansCsv(loans, settings.currencySymbol);
-      final fileName = 'loan_tracker_export_${DateTime.now().millisecondsSinceEpoch}';
+      final fileName = 'loan_tracker_export_${DateTime.now().millisecondsSinceEpoch}.csv';
 
-      String filePath;
-      if (kIsWeb) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Web export coming soon')),
-        );
-        return;
-      } else {
-        final directory = await getTemporaryDirectory();
-        filePath = '${directory.path}/$fileName.csv';
-        final file = File(filePath);
-        await file.writeAsString(csvContent);
-      }
+      await FileExporter.exportString(
+        content: csvContent,
+        fileName: fileName,
+        mimeType: 'text/csv',
+        subject: 'Loan Tracker Export',
+      );
 
       if (context.mounted) {
-        await Share.shareXFiles(
-          [XFile(filePath)],
-          text: 'Loan Tracker Export',
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('All loans exported as CSV'), backgroundColor: AppTheme.success),
         );
       }
     } catch (e) {

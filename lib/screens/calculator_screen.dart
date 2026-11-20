@@ -19,7 +19,17 @@ import 'add_loan_screen.dart';
 
 class CalculatorScreen extends StatefulWidget {
   final bool isActive;
-  const CalculatorScreen({super.key, this.isActive = true});
+  final double? initialAmount;
+  final double? initialRate;
+  final int? initialTermMonths;
+
+  const CalculatorScreen({
+    super.key,
+    this.isActive = true,
+    this.initialAmount,
+    this.initialRate,
+    this.initialTermMonths,
+  });
 
   @override
   State<CalculatorScreen> createState() => _CalculatorScreenState();
@@ -48,9 +58,24 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialAmount != null) {
+      final amt = widget.initialAmount!;
+      _amountController.text = amt == amt.roundToDouble() ? amt.toInt().toString() : amt.toStringAsFixed(2);
+    }
+    if (widget.initialRate != null) {
+      _rateController.text = widget.initialRate!.toString();
+    }
+    if (widget.initialTermMonths != null) {
+      _termController.text = widget.initialTermMonths!.toString();
+      _isYears = false;
+    }
+
     // Compute immediate baseline so first frame renders calculated result without delay
     _recalculate(debounce: false);
-    _loadSavedInputs();
+
+    if (widget.initialAmount == null && widget.initialRate == null && widget.initialTermMonths == null) {
+      _loadSavedInputs();
+    }
     _loadLoans();
   }
 
@@ -284,29 +309,50 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   }
 
   Widget _buildHeader() {
+    final canPop = Navigator.canPop(context);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              'Loan Calculator',
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.5,
-                color: AppTheme.textPrimary,
+            if (canPop) ...[
+              GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  margin: const EdgeInsets.only(right: 12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surfaceLight,
+                    borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                    border: Border.all(color: AppTheme.divider),
+                  ),
+                  child: Icon(Icons.arrow_back_rounded, size: 20, color: AppTheme.textPrimary),
+                ),
               ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              'Instant live payment & interest simulation',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: AppTheme.textLight,
-              ),
+            ],
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Loan Calculator',
+                  style: TextStyle(
+                    fontSize: canPop ? 22 : 28,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.5,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Instant live payment & interest simulation',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: AppTheme.textLight,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
